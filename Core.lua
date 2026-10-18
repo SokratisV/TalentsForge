@@ -511,6 +511,20 @@ end
 -- Rules: can this ordered list of points be taken?
 ------------------------------------------------------------------------------------------------------------------------
 
+-- Points are counted per tree: a gate that asks for 20 points means 20 in its own tree, not 20 anywhere in the class.
+-- spent[tree][currency] = points spent so far.
+local function Spend(spent, node)
+    local key = node.group or 0
+    local pool = spent[key]
+    if not pool then
+        pool = {}
+        spent[key] = pool
+    end
+    for _, cost in ipairs(node.costs) do
+        pool[cost.id] = (pool[cost.id] or 0) + cost.amount
+    end
+end
+
 local function PrerequisitesMet(meta, node, ranks, spent)
     local sufficientEdges, sufficientMet = 0, false
     for _, edge in ipairs(node.incoming) do
@@ -527,11 +541,12 @@ local function PrerequisitesMet(meta, node, ranks, spent)
         return false, "prereq"
     end
 
+    local pool = spent[node.group or 0] or {}
     for _, condition in ipairs(node.conds) do
         if condition.level and condition.level > 60 then
             return false, "level"
         end
-        if condition.currency and condition.spent and (spent[condition.currency] or 0) < condition.spent then
+        if condition.currency and condition.spent and (pool[condition.currency] or 0) < condition.spent then
             return false, "gate"
         end
     end
@@ -548,9 +563,7 @@ function TP:NodeStates(meta, order, count)
         local node = meta.nodes[nodeID]
         if node then
             ranks[nodeID] = (ranks[nodeID] or 0) + 1
-            for _, cost in ipairs(node.costs) do
-                spent[cost.id] = (spent[cost.id] or 0) + cost.amount
-            end
+            Spend(spent, node)
         end
     end
 
@@ -587,9 +600,7 @@ function TP:ValidateOrder(meta, order)
             return false, index, reason
         end
         ranks[entry.n] = (ranks[entry.n] or 0) + 1
-        for _, cost in ipairs(node.costs) do
-            spent[cost.id] = (spent[cost.id] or 0) + cost.amount
-        end
+        Spend(spent, node)
     end
     return true
 end
