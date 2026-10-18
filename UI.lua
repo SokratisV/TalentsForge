@@ -24,6 +24,8 @@ local RED = { 0.88, 0.48, 0.44 }
 local GREEN = { 0.3, 0.9, 0.3 }
 local BASE = { 0.045, 0.04, 0.035 } -- the near-black behind a spec background
 
+local AVAILABLE_GLOW = "talents-node-square-greenglow"
+
 local MODES = { { "off", "Off" }, { "guide", "Guide" }, { "edit", "Edit" } }
 local STRATA = "DIALOG"
 
@@ -65,6 +67,10 @@ local function NewText(parent, font, color)
         text:SetTextColor(color[1], color[2], color[3])
     end
     return text
+end
+
+local function HasAtlas(name)
+    return name ~= nil and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
 end
 
 -- A Blizzard panel button. SetActive lights it up the way a selected button looks in the game.
@@ -142,6 +148,9 @@ local function MakeMovable(frame, key, tf, defaultPoint)
             TP.db.pos[key] = { math.floor((fx - tx) * scale + 0.5), math.floor((fy - ty) * scale + 0.5) }
         end
         self:Place()
+        if self.onMoved then
+            self.onMoved()
+        end
     end)
     frame:Place()
 end
@@ -184,29 +193,50 @@ function UI:BuildChip(tf)
     chip:SetScript("OnLeave", GameTooltip_Hide)
 
     MakeMovable(chip, "chip", tf, { "TOP", tf, "TOP", 0, -10 })
+    chip.onMoved = function()
+        if UI.bar then
+            UI.bar:Place()
+        end
+    end
     self.chip = chip
 end
 
 function UI:BuildBar(tf)
     local bar = NewPanel(tf, 0.92, SMALL_BACKDROP)
-    bar:SetSize(500, 34)
+    bar:SetSize(418, 34)
     bar:SetFrameStrata(STRATA)
     bar:SetFrameLevel(100)
     bar:EnableMouse(true)
     bar:Hide()
 
-    bar.split = NewText(bar, "GameFontHighlight")
-    bar.split:SetPoint("LEFT", 14, 0)
+    bar:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Talents Forge", 1, 0.82, 0)
+        GameTooltip:AddLine("Shift-drag to move.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    bar:SetScript("OnLeave", GameTooltip_Hide)
 
-    bar.levelLabel = NewText(bar, "GameFontDisableSmall")
-    bar.levelLabel:SetPoint("LEFT", 120, 0)
-    bar.levelLabel:SetText("Level")
+    -- three groups, each separated from the next by a thin rule: points per tree | level slider | buttons
+    local function Rule(after, gap)
+        local rule = bar:CreateTexture(nil, "ARTWORK")
+        rule:SetColorTexture(BRONZE_MUTED[1], BRONZE_MUTED[2], BRONZE_MUTED[3], 0.6)
+        rule:SetSize(1, 20)
+        rule:SetPoint("LEFT", after, "RIGHT", gap, 0)
+        return rule
+    end
+
+    bar.split = NewText(bar, "GameFontHighlight")
+    bar.split:SetPoint("LEFT", 12, 0)
+    bar.split:SetWidth(80)
+    bar.split:SetJustifyH("LEFT")
+    local firstRule = Rule(bar.split, 6)
 
     -- Thin bronze slider, the same one FlareUI draws.
     local slider = CreateFrame("Slider", nil, bar)
     slider:SetOrientation("HORIZONTAL")
-    slider:SetSize(110, 14)
-    slider:SetPoint("LEFT", 156, 0)
+    slider:SetSize(80, 14)
+    slider:SetPoint("LEFT", firstRule, "RIGHT", 10, 0)
     slider:SetMinMaxValues(TP.FIRST_LEVEL, 60)
     slider:SetValueStep(1)
     if slider.SetObeyStepOnDrag then
@@ -236,11 +266,16 @@ function UI:BuildBar(tf)
     bar.slider = slider
 
     bar.levelValue = NewText(bar, "GameFontNormal")
-    bar.levelValue:SetPoint("LEFT", slider, "RIGHT", 10, 0)
-    bar.levelValue:SetWidth(24)
+    bar.levelValue:SetPoint("LEFT", slider, "RIGHT", 8, 0)
+    bar.levelValue:SetWidth(36)
     bar.levelValue:SetJustifyH("LEFT")
+    local secondRule = Rule(bar.levelValue, 4)
 
-    bar.clear = NewButton(bar, "Clear", 54, 22, function(self)
+    bar.import = NewButton(bar, "Import", 52, 22, function() UI:OpenSheet("import") end)
+    bar.import:SetPoint("LEFT", secondRule, "RIGHT", 8, 0)
+    bar.export = NewButton(bar, "Export", 52, 22, function() UI:OpenSheet("export") end)
+    bar.export:SetPoint("LEFT", bar.import, "RIGHT", 4, 0)
+    bar.clear = NewButton(bar, "Clear", 48, 22, function(self)
         if not self.confirm then
             self.confirm = true
             self:SetText("Sure?")
@@ -259,14 +294,10 @@ function UI:BuildBar(tf)
             UI:Refresh()
         end
     end)
-    bar.clear:SetPoint("RIGHT", -10, 0)
+    bar.clear:SetPoint("LEFT", bar.export, "RIGHT", 4, 0)
 
-    bar.export = NewButton(bar, "Export", 56, 22, function() UI:OpenSheet("export") end)
-    bar.export:SetPoint("RIGHT", bar.clear, "LEFT", -4, 0)
-    bar.import = NewButton(bar, "Import", 56, 22, function() UI:OpenSheet("import") end)
-    bar.import:SetPoint("RIGHT", bar.export, "LEFT", -4, 0)
-
-    MakeMovable(bar, "bar", tf, { "BOTTOMLEFT", tf, "BOTTOMLEFT", 14, 14 })
+    -- right under the chip, wherever the chip is
+    MakeMovable(bar, "bar", tf, { "TOP", self.chip, "BOTTOM", 0, -4 })
     self.bar = bar
 end
 
@@ -298,6 +329,26 @@ function UI:BuildOverlay(button)
     overlay.glow:SetVertexColor(PLAN[1], PLAN[2], PLAN[3])
     overlay.glow:SetAlpha(0.45)
     overlay.glow:Hide()
+
+    -- It sits on its own frame just under the talent (a child of the talent's parent), so it glows around the talent
+    -- instead of washing out its icon.
+    overlay.availHost = CreateFrame("Frame", nil, button:GetParent() or button)
+    overlay.availHost:SetFrameLevel(math.max(button:GetFrameLevel() - 1, 0))
+    overlay.availHost:SetPoint("CENTER", button, "CENTER")
+    overlay.availHost:SetSize(1, 1)
+    overlay.avail = overlay.availHost:CreateTexture(nil, "BACKGROUND")
+    overlay.avail:SetPoint("CENTER", overlay.availHost, "CENTER")
+    if HasAtlas(AVAILABLE_GLOW) then
+        overlay.avail:SetAtlas(AVAILABLE_GLOW)
+        overlay.availScale = 2.1
+    else
+        overlay.avail:SetTexture(HILIGHT)
+        overlay.avail:SetBlendMode("ADD")
+        overlay.avail:SetVertexColor(GREEN[1], GREEN[2], GREEN[3])
+        overlay.availScale = 1.5
+    end
+    overlay.avail:SetAlpha(0.75)
+    overlay.availHost:Hide()
 
     overlay.badge = CreateFrame("Frame", nil, overlay)
     overlay.badge:SetFrameLevel(overlay:GetFrameLevel() + 5)
@@ -962,7 +1013,7 @@ function UI:RefreshBar(snap, mode)
     bar.slider:SetMinMaxValues(TP.FIRST_LEVEL, lastLevel)
     bar.slider:SetValue(view and TP:LevelOf(view) or lastLevel)
     self.settingSlider = nil
-    bar.levelValue:SetText(#order == 0 and "-" or tostring(TP:LevelOf(count)))
+    bar.levelValue:SetText(#order == 0 and "-" or ("Lv " .. TP:LevelOf(count)))
 end
 
 -- frame: the game's talent window, or the class browser. snap is nil to clear the frame's overlays.
@@ -974,9 +1025,11 @@ function UI:RefreshOverlays(frame, snap, mode)
 
     local editing = snap and mode == "edit" and snap.plan ~= nil
     local guiding = snap and mode == "guide" and snap.plan ~= nil and snap.nextNode ~= nil
-    local stats
+    local stats, states
     if editing then
-        stats = PlanStats(snap, math.min(TP.view or #snap.plan.order, #snap.plan.order))
+        local count = math.min(TP.view or #snap.plan.order, #snap.plan.order)
+        stats = PlanStats(snap, count)
+        states = TP:NodeStates(snap.meta, snap.plan.order, count) -- what could be taken after those points
     end
 
     for button in tf:EnumerateAllTalentButtons() do
@@ -988,6 +1041,7 @@ function UI:RefreshOverlays(frame, snap, mode)
         if not known or not (editing or guiding) then
             if overlay then
                 overlay:Hide()
+                overlay.availHost:Hide()
             end
         else
             overlay = overlay or self:BuildOverlay(button)
@@ -998,6 +1052,14 @@ function UI:RefreshOverlays(frame, snap, mode)
             local ring, badge, glow = overlay.ring, overlay.badge, overlay.glow
             local show = false
             local isNext = false
+
+            local state = states and states[nodeID]
+            local canTake = state == "available" or state == "partial"
+            if canTake then
+                local width = overlay.button:GetWidth() or 40
+                overlay.avail:SetSize(width * overlay.availScale, width * overlay.availScale)
+            end
+            overlay.availHost:SetShown(canTake)
 
             if editing then
                 local record = stats[nodeID]
@@ -1085,10 +1147,6 @@ local NODE_ATLAS = {
     maxed = "talents-node-square-yellow",
 }
 local ARROW_HEAD_ATLAS = "talents-arrow-head-locked"
-
-local function HasAtlas(name)
-    return name ~= nil and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
-end
 
 local HEADER_HEIGHT = 84
 local PANEL_TOP, PANEL_BOTTOM, PANEL_MARGIN, PANEL_GAP = 62, 58, 14, 8
