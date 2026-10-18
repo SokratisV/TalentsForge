@@ -392,6 +392,7 @@ local function BuildMeta(configID, treeID)
             }
 
             local entryID = info.entryIDs and info.entryIDs[1]
+            node.entry = entryID
             if entryID then
                 local entry = C_Traits.GetEntryInfo(configID, entryID)
                 local definition = entry and entry.definitionID and C_Traits.GetDefinitionInfo(entry.definitionID)
@@ -579,6 +580,17 @@ function TP:NodeStates(meta, order, count)
         end
     end
     return states
+end
+
+-- How many ranks of a talent the first `count` planned points give it.
+function TP:PlannedRank(plan, nodeID, count)
+    local rank = 0
+    for index = 1, math.min(count or #plan.order, #plan.order) do
+        if plan.order[index].n == nodeID then
+            rank = rank + 1
+        end
+    end
+    return rank
 end
 
 -- Returns true, or false plus the index of the first bad point and why.

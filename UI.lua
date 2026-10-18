@@ -301,6 +301,59 @@ function UI:BuildBar(tf)
     self.bar = bar
 end
 
+-- Adds the description of one rank of a talent, the way the game's own talent tooltip gets it.
+local function AddRankText(entryID, rank)
+    local getter = C_TooltipInfo and C_TooltipInfo.GetTraitEntry
+    if not getter then
+        return false
+    end
+    local ok, data = pcall(getter, entryID, rank)
+    if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then
+        return false
+    end
+    local added = false
+    for _, line in ipairs(data.lines) do
+        local text = line.leftText
+        if type(text) == "string" and text ~= "" then
+            local red, green, blue = 1, 1, 1
+            if line.leftColor and line.leftColor.GetRGB then
+                red, green, blue = line.leftColor:GetRGB()
+            end
+            GameTooltip:AddLine(text, red, green, blue, true)
+            added = true
+        end
+    end
+    return added
+end
+
+-- In edit mode a talent with several ranks shows what it does at the rank you have planned (and the next one), not at
+-- the rank you own. Returns false when there is nothing to show, so the game's own tooltip is used instead.
+function UI:ShowPlannedTooltip(owner, nodeID)
+    local snap = self.snap
+    local node = snap and snap.plan and snap.meta.nodes[nodeID]
+    if not node or node.max <= 1 or not node.entry then
+        return false
+    end
+    local count = math.min(TP.view or #snap.plan.order, #snap.plan.order)
+    local planned = TP:PlannedRank(snap.plan, nodeID, count)
+    if planned <= 0 then
+        return false
+    end
+
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:SetText(TP:NodeName(snap.meta, nodeID), 1, 1, 1)
+    GameTooltip:AddLine("Planned rank " .. planned .. "/" .. node.max, PLAN[1], PLAN[2], PLAN[3])
+    if not AddRankText(node.entry, planned) then
+        return false
+    end
+    if planned < node.max then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(TALENT_BUTTON_TOOLTIP_NEXT_RANK or "Next rank:", GOLD[1], GOLD[2], GOLD[3])
+        AddRankText(node.entry, planned + 1)
+    end
+    return true
+end
+
 function UI:BuildOverlay(button)
     local overlay = CreateFrame("Button", nil, button)
     overlay:SetAllPoints(button)
@@ -377,11 +430,12 @@ function UI:BuildOverlay(button)
     end)
     overlay:SetScript("OnEnter", function(self)
         local original = self.button:GetScript("OnEnter")
-        if original then
+        local planned = TP:Mode() == "edit" and UI:ShowPlannedTooltip(self, self.nodeID)
+        if original and not planned then
             original(self.button)
         end
         if TP:Mode() == "edit" then
-            if not original then
+            if not original and not planned then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             end
             GameTooltip:AddLine(" ")

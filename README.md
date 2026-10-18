@@ -28,6 +28,8 @@ Screenshots: drop images into docs/ and reference them here, e.g.
 - **Order matters.** A plan is a list of points in the order you take them. Every planned
   talent shows the level you take it at, and a level slider shows the build as it stands at
   any level. Clicking with the slider part-way inserts the point at that spot.
+- **Tooltips at your planned rank.** In Edit mode, hovering a talent with several ranks shows what
+  it does at the rank you have planned, and what the next rank adds.
 - **Guide mode.** Pick *Guide* and a single talent glows: your next point in the selected
   plan. It follows what you have actually bought, in any order, so the glow always points at
   the first planned point you have not covered yet.
