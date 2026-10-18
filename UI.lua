@@ -427,6 +427,13 @@ function UI:BuildOverlay(button)
 
     overlay:SetScript("OnClick", function(self, mouseButton)
         UI:NodeClicked(self.nodeID, mouseButton)
+        -- the pointer is still on the talent, so redraw its tooltip for the rank it has now
+        if self:IsMouseOver() then
+            local enter = self:GetScript("OnEnter")
+            if enter then
+                enter(self)
+            end
+        end
     end)
     overlay:SetScript("OnEnter", function(self)
         local original = self.button:GetScript("OnEnter")
