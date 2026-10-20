@@ -65,6 +65,8 @@ function TP:InitDB()
     db.plans = type(db.plans) == "table" and db.plans or {}   -- [treeID] = { plan, ... }
     db.active = type(db.active) == "table" and db.active or {} -- [treeID] = plan name
     db.probe, db.artFit = nil, nil -- left behind by earlier versions
+    db.focus = db.focus == true     -- Guide mode: dim every talent but the next one
+    db.animations = db.animations ~= false -- Edit mode: rings, flashes and sparks
     db.pos = type(db.pos) == "table" and db.pos or {}         -- moved frames, as offsets from the talent window's centre
     if db.mode ~= "off" and db.mode ~= "guide" and db.mode ~= "edit" then
         db.mode = "guide"

@@ -3,7 +3,7 @@
 **A minimal talent build planner that lives inside the game's own talent window.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.0.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.1.0-brightgreen)
 ![WoW](https://img.shields.io/badge/WoW-Forever-f8b700)
 ![Interface](https://img.shields.io/badge/interface-16001-555)
 
@@ -24,12 +24,19 @@ Screenshots: drop images into docs/ and reference them here, e.g.
 ## Features
 
 - **Plan inside the talent window.** Left-click a talent to plan a point, Shift-click to plan
-  every rank, right-click to remove one. Planning never spends real points.
+  every rank, right-click to remove one (Shift-right-click removes them all). Planning never spends real points.
 - **Order matters.** A plan is a list of points in the order you take them. Every planned
   talent shows the level you take it at, and a level slider shows the build as it stands at
   any level. Clicking with the slider part-way inserts the point at that spot.
 - **Tooltips at your planned rank.** In Edit mode, hovering a talent with several ranks shows what
   it does at the rank you have planned, and what the next rank adds.
+- **A flourish when a talent is full.** The point that fills a talent gives it a quick gold flash
+  and pops its count.
+- **Little touches.** Each point you plan sends a soft ring out of the talent. A talent your point has
+  opened wakes up, with a spark running along the way to it. The next talent in Guide mode has a slow
+  shine sweeping over it (and the menu can dim all the others). A scrubbed-away point stays visible as a
+  ghost, finishing a plan throws sparks from the chip, and the menu and dialogs glide in. The edit-mode
+  effects (rings, flashes, sparks) can be switched off from the menu.
 - **Guide mode.** Pick *Guide* and a single talent glows: your next point in the selected
   plan. It follows what you have actually bought, in any order, so the glow always points at
   the first planned point you have not covered yet.

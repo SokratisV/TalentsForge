@@ -2,7 +2,7 @@
 ## Title: Talents Forge
 ## Notes: Plan talent builds right inside the talent window: save them in order, follow your next talent, browse other classes, import and export.
 ## Author: Sokratis
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: TalentsForgeDB
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
 ## X-License: MIT

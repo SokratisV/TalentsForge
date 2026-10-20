@@ -22,6 +22,7 @@ local PLAN = { 0.25, 0.78, 0.70 } -- the colour of everything that is "your plan
 local INK = { 0.02, 0.19, 0.16 }
 local RED = { 0.88, 0.48, 0.44 }
 local GREEN = { 0.3, 0.9, 0.3 }
+local MUTED = { 0.58, 0.53, 0.42 }
 local BASE = { 0.045, 0.04, 0.035 } -- the near-black behind a spec background
 
 local AVAILABLE_GLOW = "talents-node-square-greenglow"
@@ -87,6 +88,56 @@ local function NewButton(parent, label, width, height, onClick)
             self:UnlockHighlight()
         end
     end
+    return button
+end
+
+-- A flat button in the addon's own look: a dark body and a thin border that warms to bronze when the pointer is on it.
+-- SetText(text, tone) also takes a colour for the label (used for the "Sure?" asking).
+local function NewFlatButton(parent, label, width, height, onClick)
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    button:SetSize(width, height)
+    button:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    button.text = NewText(button, "GameFontHighlightSmall")
+    button.text:SetPoint("CENTER")
+
+    function button:Restyle()
+        local body, edge, ink
+        if self.pressed then
+            body, edge = { 0.06, 0.05, 0.035 }, BRONZE
+        elseif self.hovered then
+            body, edge = { 0.14, 0.115, 0.08 }, BRONZE
+        else
+            body, edge = { 0.09, 0.075, 0.055 }, { 0.24, 0.2, 0.12 }
+        end
+        ink = self.tone or (self.hovered and { 1, 1, 1 } or { 0.91, 0.85, 0.66 })
+        self:SetBackdropColor(body[1], body[2], body[3], 1)
+        self:SetBackdropBorderColor(edge[1], edge[2], edge[3], 1)
+        self.text:SetTextColor(ink[1], ink[2], ink[3])
+    end
+    function button:SetText(text, tone)
+        self.text:SetText(text)
+        self.tone = tone
+        self:Restyle()
+    end
+
+    button:SetScript("OnEnter", function(self)
+        self.hovered = true
+        self:Restyle()
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.hovered, self.pressed = false, false
+        self:Restyle()
+    end)
+    button:SetScript("OnMouseDown", function(self)
+        self.pressed = true
+        self:Restyle()
+    end)
+    button:SetScript("OnMouseUp", function(self)
+        self.pressed = false
+        self:Restyle()
+    end)
+    button:SetScript("OnClick", onClick)
+    button:SetText(label)
     return button
 end
 
@@ -159,6 +210,127 @@ end
 -- Building the pieces
 ------------------------------------------------------------------------------------------------------------------------
 
+-- An outline in the shape of the game's own talent frame (chamfered corners), tinted with SetBackdropBorderColor like the
+-- plain border it replaces. Falls back to a plain square border when the client doesn't have the art.
+local RING_ATLAS = "talents-node-square-gray"
+local function NewRing(parent, outset)
+    local ring = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    ring:SetPoint("TOPLEFT", -outset, outset)
+    ring:SetPoint("BOTTOMRIGHT", outset, -outset)
+    if HasAtlas(RING_ATLAS) then
+        ring.edge = ring:CreateTexture(nil, "OVERLAY")
+        ring.edge:SetAllPoints()
+        ring.edge:SetAtlas(RING_ATLAS)
+        ring.edge:SetDesaturated(true)
+        function ring:SetBackdropBorderColor(red, green, blue, alpha)
+            self.edge:SetVertexColor(red, green, blue, alpha or 1)
+        end
+    else
+        ring:SetBackdrop({ edgeFile = WHITE, edgeSize = 2 })
+    end
+    ring:Hide()
+    return ring
+end
+
+-- A small glowing sphere: a bright round core inside two softer round halos.
+local function NewOrb(parent, size, color)
+    local orb = CreateFrame("Frame", nil, parent)
+    orb:SetSize(size * 2.6, size * 2.6)
+    local function Disc(diameter, alpha, red, green, blue)
+        local disc = orb:CreateTexture(nil, "OVERLAY")
+        disc:SetTexture(WHITE)
+        disc:SetBlendMode("ADD")
+        disc:SetSize(diameter, diameter)
+        disc:SetPoint("CENTER", orb, "CENTER")
+        local mask = orb:CreateMaskTexture()
+        mask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(disc)
+        disc:AddMaskTexture(mask)
+        disc:SetVertexColor(red, green, blue, alpha)
+    end
+    Disc(size * 2.6, 0.22, color[1], color[2], color[3])
+    Disc(size * 1.6, 0.45, color[1], color[2], color[3])
+    Disc(size, 1, 1, 1, 0.95)
+    return orb
+end
+
+-- Things that open (the menu, the dialog) fade in and slide down 6px over 0.14s instead of snapping into place.
+local function GlideIn(frame)
+    if not frame.glide then
+        frame.glide = frame:CreateAnimationGroup()
+        local fade = frame.glide:CreateAnimation("Alpha")
+        fade:SetFromAlpha(0)
+        fade:SetToAlpha(1)
+        fade:SetDuration(0.14)
+        local slide = frame.glide:CreateAnimation("Translation")
+        slide:SetOffset(0, -6)
+        slide:SetDuration(0.14)
+        slide:SetSmoothing("OUT")
+        local function Settle()
+            if frame.glideHome then
+                frame:ClearAllPoints()
+                frame:SetPoint(unpack(frame.glideHome))
+                frame.glideHome = nil
+            end
+        end
+        frame.glide:SetScript("OnFinished", Settle)
+        frame.glide:SetScript("OnStop", Settle)
+    end
+    frame.glide:Stop()
+    local point, relative, relativePoint, x, y = frame:GetPoint(1)
+    if not point then
+        return
+    end
+    frame.glideHome = { point, relative, relativePoint, x or 0, y or 0 }
+    frame:ClearAllPoints()
+    frame:SetPoint(point, relative, relativePoint, x or 0, (y or 0) + 6) -- starts 6px higher and slides down to where it belongs
+    frame.glide:Play()
+end
+
+-- ... and fade out and slide up again when they close; `done` hides whatever holds them once the animation has played.
+local function GlideOut(frame, done)
+    if frame.closing then
+        return
+    end
+    if not frame.glideOutGroup then
+        frame.glideOutGroup = frame:CreateAnimationGroup()
+        frame.glideOutGroup:SetToFinalAlpha(true)
+        local fade = frame.glideOutGroup:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(0)
+        fade:SetDuration(0.12)
+        local slide = frame.glideOutGroup:CreateAnimation("Translation")
+        slide:SetOffset(0, 6)
+        slide:SetDuration(0.12)
+        slide:SetSmoothing("IN")
+        frame.glideOutGroup:SetScript("OnFinished", function()
+            frame.closing = false
+            local finish = frame.glideOutDone
+            frame.glideOutDone = nil
+            if finish then
+                finish()
+            end
+            frame:SetAlpha(1)
+        end)
+    end
+    if frame.glide then
+        frame.glide:Stop()
+    end
+    frame.closing = true
+    frame.glideOutDone = done
+    frame.glideOutGroup:Play()
+end
+
+-- Opening something that is still closing brings it straight back.
+local function CancelGlideOut(frame)
+    if frame.closing then
+        frame.glideOutGroup:Stop()
+        frame.closing = false
+        frame.glideOutDone = nil
+        frame:SetAlpha(1)
+    end
+end
+
 function UI:BuildChip(tf)
     local chip = CreateFrame("Button", nil, tf, "BackdropTemplate")
     chip:SetHeight(26)
@@ -192,6 +364,28 @@ function UI:BuildChip(tf)
     end)
     chip:SetScript("OnLeave", GameTooltip_Hide)
 
+    -- embers that rise from the chip when a plan is finished
+    chip.embers = {}
+    for index = 1, 6 do
+        local ember = NewOrb(chip, 4, { 1, 0.62, 0.18 })
+        ember:SetFrameLevel(chip:GetFrameLevel() + 5)
+        ember:Hide()
+        ember.group = ember:CreateAnimationGroup()
+        local rise = ember.group:CreateAnimation("Translation")
+        rise:SetOffset(0, 32 + (index % 3) * 8)
+        rise:SetDuration(1.1)
+        rise:SetSmoothing("OUT")
+        local fade = ember.group:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(0)
+        fade:SetDuration(1.1)
+        fade:SetSmoothing("IN")
+        ember.group:SetScript("OnFinished", function()
+            ember:Hide()
+        end)
+        chip.embers[index] = ember
+    end
+
     MakeMovable(chip, "chip", tf, { "TOP", tf, "TOP", 0, -10 })
     chip.onMoved = function()
         if UI.bar then
@@ -199,6 +393,39 @@ function UI:BuildChip(tf)
         end
     end
     self.chip = chip
+end
+
+function UI:PlayForgeSparks()
+    local chip = self.chip
+    if not chip or not chip:IsShown() then
+        return
+    end
+    local width = chip:GetWidth() or 200
+    for index, ember in ipairs(chip.embers) do
+        ember:ClearAllPoints()
+        ember:SetPoint("TOP", chip, "TOP", (index - 3.5) * width / 7, -2)
+        C_Timer.After(index * 0.07, function()
+            ember.group:Stop()
+            ember:Show()
+            ember.group:Play()
+        end)
+    end
+end
+
+-- Remembers whether each plan was finished, and when you buy the last planned point, the chip throws sparks.
+function UI:TrackCompletion(snap, mode)
+    if not snap or not snap.plan or TP.browse then
+        return
+    end
+    local key = snap.treeID .. ":" .. snap.plan.name
+    local complete = #snap.plan.order > 0 and snap.nextNode == nil
+    self.completion = self.completion or {}
+    local previous = self.completion[key]
+    local spent = snap.spent
+    self.completion[key] = { complete = complete, spent = spent }
+    if previous and not previous.complete and complete and mode == "guide" and spent > previous.spent then
+        self:PlayForgeSparks()
+    end
 end
 
 function UI:BuildBar(tf)
@@ -271,14 +498,14 @@ function UI:BuildBar(tf)
     bar.levelValue:SetJustifyH("LEFT")
     local secondRule = Rule(bar.levelValue, 4)
 
-    bar.import = NewButton(bar, "Import", 52, 22, function() UI:OpenSheet("import") end)
+    bar.import = NewFlatButton(bar, "Import", 52, 22, function() UI:OpenSheet("import") end)
     bar.import:SetPoint("LEFT", secondRule, "RIGHT", 8, 0)
-    bar.export = NewButton(bar, "Export", 52, 22, function() UI:OpenSheet("export") end)
+    bar.export = NewFlatButton(bar, "Export", 52, 22, function() UI:OpenSheet("export") end)
     bar.export:SetPoint("LEFT", bar.import, "RIGHT", 4, 0)
-    bar.clear = NewButton(bar, "Clear", 48, 22, function(self)
+    bar.clear = NewFlatButton(bar, "Clear", 48, 22, function(self)
         if not self.confirm then
             self.confirm = true
-            self:SetText("Sure?")
+            self:SetText("Sure?", RED)
             C_Timer.After(2, function()
                 self.confirm = nil
                 self:SetText("Clear")
@@ -361,11 +588,7 @@ function UI:BuildOverlay(button)
     overlay:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     overlay.button = button
 
-    overlay.ring = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
-    overlay.ring:SetPoint("TOPLEFT", -3, 3)
-    overlay.ring:SetPoint("BOTTOMRIGHT", 3, -3)
-    overlay.ring:SetBackdrop({ edgeFile = WHITE, edgeSize = 2 })
-    overlay.ring:Hide()
+    overlay.ring = NewRing(overlay, 4)
 
     overlay.pulse = overlay.ring:CreateAnimationGroup()
     local fade = overlay.pulse:CreateAnimation("Alpha")
@@ -393,6 +616,7 @@ function UI:BuildOverlay(button)
     overlay.avail:SetPoint("CENTER", overlay.availHost, "CENTER")
     if HasAtlas(AVAILABLE_GLOW) then
         overlay.avail:SetAtlas(AVAILABLE_GLOW)
+        overlay.avail:SetBlendMode("ADD") -- as the game's own Glow: normal blending leaves the atlas's dark core as a shadow
         overlay.availScale = 2.1
     else
         overlay.avail:SetTexture(HILIGHT)
@@ -425,8 +649,200 @@ function UI:BuildOverlay(button)
     overlay.rank:SetShadowColor(0, 0, 0, 1)
     overlay.rank:SetShadowOffset(1, -1)
 
+    -- When a talent reaches max rank it flares gold and its count pops, as on foreverchanges.pro (there:
+    -- 0.55s ease-out, a gold glow fading to nothing, and the count scaling from 1.35x back to 1x).
+    overlay.flashHost = CreateFrame("Frame", nil, overlay)
+    overlay.flashHost:SetAllPoints(overlay)
+    overlay.flashHost:SetFrameLevel(overlay:GetFrameLevel() + 8)
+    overlay.flashGlow = overlay.flashHost:CreateTexture(nil, "BACKGROUND")
+    overlay.flashGlow:SetPoint("CENTER", overlay.flashHost, "CENTER")
+    if HasAtlas(AVAILABLE_GLOW) then
+        overlay.flashGlow:SetAtlas(AVAILABLE_GLOW)
+        overlay.flashGlow:SetDesaturated(true) -- so the gold tint below isn't mixed with the atlas's green
+        overlay.flashScale = 2.1
+    else
+        overlay.flashGlow:SetTexture(HILIGHT)
+        overlay.flashScale = 1.6
+    end
+    overlay.flashGlow:SetBlendMode("ADD")
+    overlay.flashGlow:SetVertexColor(1, 0.82, 0)
+    overlay.flashShine = overlay.flashHost:CreateTexture(nil, "OVERLAY")
+    overlay.flashShine:SetPoint("TOPLEFT", overlay.flashHost, "TOPLEFT", 2, -2)
+    overlay.flashShine:SetPoint("BOTTOMRIGHT", overlay.flashHost, "BOTTOMRIGHT", -2, 2)
+    overlay.flashShine:SetColorTexture(1, 0.92, 0.6, 0.55) -- the brightening of the icon
+    overlay.flashShine:SetBlendMode("ADD")
+    overlay.flashGroup = overlay.flashHost:CreateAnimationGroup()
+    local fade = overlay.flashGroup:CreateAnimation("Alpha")
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(0)
+    fade:SetDuration(0.55)
+    fade:SetSmoothing("OUT")
+    overlay.flashGroup:SetScript("OnFinished", function()
+        overlay.flashHost:Hide()
+    end)
+    overlay.flashHost:Hide()
+
+    overlay.rankColor = { overlay.rank:GetTextColor() }
+    if #overlay.rankColor < 3 then
+        overlay.rankColor = { 1, 0.82, 0 }
+    end
+    overlay.rankGroup = overlay.rankHost:CreateAnimationGroup()
+    local pop = overlay.rankGroup:CreateAnimation("Scale")
+    if pop.SetScaleFrom then
+        pop:SetScaleFrom(1.35, 1.35)
+        pop:SetScaleTo(1, 1)
+        pop:SetOrigin("BOTTOMRIGHT", 0, 0)
+        pop:SetDuration(0.55)
+        pop:SetSmoothing("OUT")
+    end
+    overlay.rankGroup:SetScript("OnFinished", function()
+        overlay.rank:SetTextColor(overlay.rankColor[1], overlay.rankColor[2], overlay.rankColor[3])
+    end)
+
+    -- the glow behind a flash, in any colour; shine = also brighten the icon
+    function overlay:PlayFlash(color, shine)
+        if TP.db.animations == false then
+            return
+        end
+        local width = self.button:GetWidth() or 40
+        self.flashGlow:SetSize(width * self.flashScale, width * self.flashScale)
+        self.flashGlow:SetVertexColor(color[1], color[2], color[3])
+        self.flashShine:SetShown(shine)
+        self.flashGroup:Stop()
+        self.flashHost:Show()
+        self.flashGroup:Play()
+    end
+
+    function overlay:PlayMaxedFlash()
+        if TP.db.animations == false then
+            return
+        end
+        self:PlayFlash(GOLD, true)
+        self.rank:SetTextColor(1, 1, 1) -- the count flares white, then settles back
+        self.rankGroup:Stop()
+        self.rankGroup:Play()
+    end
+
+    -- Plan ping: a soft teal ring leaves the talent with every point you plan.
+    overlay.pingHost = NewRing(overlay, 4)
+    overlay.pingHost:SetFrameLevel(overlay:GetFrameLevel() + 6)
+    overlay.pingHost:SetBackdropBorderColor(PLAN[1], PLAN[2], PLAN[3], 1)
+    overlay.pingGroup = overlay.pingHost:CreateAnimationGroup()
+    local grow = overlay.pingGroup:CreateAnimation("Scale")
+    if grow.SetScaleFrom then
+        grow:SetScaleFrom(1, 1)
+        grow:SetScaleTo(1.9, 1.9)
+    end
+    grow:SetDuration(0.6)
+    grow:SetSmoothing("OUT")
+    local ringFade = overlay.pingGroup:CreateAnimation("Alpha")
+    ringFade:SetFromAlpha(0.9)
+    ringFade:SetToAlpha(0)
+    ringFade:SetDuration(0.6)
+    overlay.pingGroup:SetScript("OnFinished", function()
+        overlay.pingHost:Hide()
+    end)
+    overlay.pingHost:Hide()
+
+    function overlay:PlayPing()
+        if TP.db.animations == false then
+            return
+        end
+        self.pingGroup:Stop()
+        self.pingHost:Show()
+        self.pingGroup:Play()
+    end
+
+    -- A talent that has just been opened wakes up: a bright teal flare and a ring.
+    function overlay:PlayWake()
+        self:PlayFlash({ 0.55, 1, 0.9 }, false)
+        self:PlayPing()
+    end
+
+    -- A spark runs from this talent to each one it has just opened, and the target wakes up when its spark arrives.
+    -- Several can be in the air at once, so they come from a small pool.
+    overlay.sparks = {}
+    function overlay:PlaySpark(target)
+        if TP.db.animations == false then
+            return
+        end
+        local fromX, fromY = self.button:GetCenter()
+        local toX, toY = target.button:GetCenter()
+        if not (fromX and fromY and toX and toY) then
+            target:PlayWake()
+            return
+        end
+        local spark
+        for _, candidate in ipairs(self.sparks) do
+            if not candidate:IsShown() then
+                spark = candidate
+                break
+            end
+        end
+        if not spark then
+            spark = NewOrb(self, 7, { 0.35, 0.95, 0.85 })
+            spark:SetPoint("CENTER", self, "CENTER")
+            spark:SetFrameLevel(self:GetFrameLevel() + 14)
+            spark.group = spark:CreateAnimationGroup()
+            spark.move = spark.group:CreateAnimation("Translation")
+            spark.move:SetDuration(0.5)
+            spark.move:SetSmoothing("IN")
+            spark.group:SetScript("OnFinished", function()
+                spark:Hide()
+                local arrive = spark.onArrive
+                spark.onArrive = nil
+                if arrive then
+                    arrive()
+                end
+            end)
+            spark:Hide()
+            self.sparks[#self.sparks + 1] = spark
+        end
+        spark.move:SetOffset(toX - fromX, toY - fromY)
+        spark.onArrive = function()
+            target:PlayWake()
+        end
+        spark.group:Stop()
+        spark:Show()
+        spark.group:Play()
+    end
+
+    -- Guide mode: a slow shine sweeps across the next talent (a narrow strip, clipped to the talent, every ~2.6s).
+    overlay.sheenClip = CreateFrame("Frame", nil, overlay)
+    overlay.sheenClip:SetAllPoints(overlay)
+    overlay.sheenClip:SetFrameLevel(overlay:GetFrameLevel() + 4)
+    overlay.sheenClip:SetClipsChildren(true)
+    overlay.sheen = overlay.sheenClip:CreateTexture(nil, "OVERLAY")
+    overlay.sheen:SetTexture(WHITE)
+    overlay.sheen:SetBlendMode("ADD")
+    overlay.sheen:SetVertexColor(1, 1, 1, 0.45)
+    overlay.sheen:SetWidth(10)
+    overlay.sheen:SetPoint("TOPLEFT", overlay.sheenClip, "TOPLEFT", -14, 8)
+    overlay.sheen:SetPoint("BOTTOMLEFT", overlay.sheenClip, "BOTTOMLEFT", -14, -8)
+    if overlay.sheen.SetRotation then
+        overlay.sheen:SetRotation(math.rad(20))
+    end
+    overlay.sheenGroup = overlay.sheen:CreateAnimationGroup()
+    overlay.sheenGroup:SetLooping("REPEAT")
+    overlay.sheenSweep = overlay.sheenGroup:CreateAnimation("Translation")
+    overlay.sheenSweep:SetOrder(1)
+    overlay.sheenSweep:SetDuration(0.8)
+    overlay.sheenSweep:SetSmoothing("IN_OUT")
+    local rest = overlay.sheenGroup:CreateAnimation("Alpha") -- a pause between sweeps
+    rest:SetOrder(2)
+    rest:SetFromAlpha(1)
+    rest:SetToAlpha(1)
+    rest:SetDuration(1.8)
+    overlay.sheenClip:Hide()
+
+    -- Guide mode with "dim the rest" on: every talent but the next one is shaded.
+    overlay.dim = overlay:CreateTexture(nil, "ARTWORK")
+    overlay.dim:SetAllPoints()
+    overlay.dim:SetColorTexture(0, 0, 0, 0.55)
+    overlay.dim:Hide()
+
     overlay:SetScript("OnClick", function(self, mouseButton)
-        UI:NodeClicked(self.nodeID, mouseButton)
+        UI:NodeClicked(self.nodeID, mouseButton, self)
         -- the pointer is still on the talent, so redraw its tooltip for the rank it has now
         if self:IsMouseOver() then
             local enter = self:GetScript("OnEnter")
@@ -450,6 +866,7 @@ function UI:BuildOverlay(button)
             GameTooltip:AddLine("Left-click: plan a point", 1, 1, 1)
             GameTooltip:AddLine("Shift-click: plan every rank", 1, 1, 1)
             GameTooltip:AddLine("Right-click: remove a point", 1, 1, 1)
+            GameTooltip:AddLine("Shift-right-click: remove every point", 1, 1, 1)
             GameTooltip:Show()
         end
     end)
@@ -472,6 +889,8 @@ end
 
 local MENU_WIDTH = 340
 local ROW_HEIGHT = 22
+local CLASS_ROW_HEIGHT = 34
+local CLASS_PILL_WIDTH = 60
 
 function UI:BuildMenu(tf)
     local catcher = CreateFrame("Button", nil, tf)
@@ -487,24 +906,72 @@ function UI:BuildMenu(tf)
     menu:SetFrameLevel(160)
     menu:EnableMouse(true)
 
-    -- Off on the left edge, Edit on the right edge, Guide centred: equal margins either side.
+    -- Off / Guide / Edit as one compact pill: a dark track with three segments, the chosen one washed in teal with a line
+    -- under it.
+    local bar = CreateFrame("Frame", nil, menu, "BackdropTemplate")
+    bar:SetPoint("TOPLEFT", 12, -10)
+    bar:SetPoint("TOPRIGHT", -12, -10)
+    bar:SetHeight(28)
+    bar:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    bar:SetBackdropColor(0.09, 0.075, 0.055, 1)
+    bar:SetBackdropBorderColor(0.24, 0.2, 0.12, 1)
+    menu.modeBar = bar
     menu.modes = {}
     for index, mode in ipairs(MODES) do
         local key = mode[1]
-        local button = NewButton(menu, mode[2], 70, 22, function()
-            TP:SetMode(key)
-            UI:CloseMenu()
-        end)
-        if index == 1 then
-            button:SetPoint("TOPLEFT", 10, -10)
-        elseif index == #MODES then
-            button:SetPoint("TOPRIGHT", -10, -10)
-        else
-            button:SetPoint("TOP", 0, -10)
+        local segment = CreateFrame("Button", nil, bar)
+        segment:SetHeight(22)
+        segment.index = index
+        segment.wash = segment:CreateTexture(nil, "BACKGROUND")
+        segment.wash:SetAllPoints()
+        segment.wash:SetColorTexture(PLAN[1], PLAN[2], PLAN[3], 0.17)
+        segment.wash:Hide()
+        segment.line = segment:CreateTexture(nil, "ARTWORK")
+        segment.line:SetColorTexture(PLAN[1], PLAN[2], PLAN[3], 1)
+        segment.line:SetHeight(2)
+        segment.line:SetPoint("BOTTOMLEFT", 16, 0)
+        segment.line:SetPoint("BOTTOMRIGHT", -16, 0)
+        segment.line:Hide()
+        segment.text = NewText(segment, "GameFontHighlightSmall", MUTED)
+        segment.text:SetPoint("CENTER")
+        segment.text:SetText(mode[2])
+        function segment:SetActive(active)
+            self.active = active and true or false
+            self.wash:SetShown(self.active)
+            self.line:SetShown(self.active)
+            local color = self.active and PLAN or MUTED
+            self.text:SetTextColor(color[1], color[2], color[3])
         end
-        menu.modes[key] = button
+        segment:SetScript("OnEnter", function(self)
+            if not self.active then
+                self.text:SetTextColor(0.91, 0.85, 0.66)
+            end
+        end)
+        segment:SetScript("OnLeave", function(self)
+            self:SetActive(self.active)
+        end)
+        segment:SetScript("OnClick", function()
+            TP:SetMode(key)
+            UI:RebuildMenu()
+        end)
+        menu.modes[key] = segment
+    end
+    -- the thirds follow the width of the track
+    bar:SetScript("OnSizeChanged", function(self, width)
+        local each = ((width or MENU_WIDTH - 24) - 6) / #MODES
+        for key, segment in pairs(menu.modes) do
+            segment:ClearAllPoints()
+            segment:SetPoint("TOPLEFT", self, "TOPLEFT", 3 + (segment.index - 1) * each, -3)
+            segment:SetWidth(each)
+        end
+    end)
+    for key, segment in pairs(menu.modes) do
+        segment:SetWidth(((MENU_WIDTH - 24) - 6) / #MODES)
+        segment:ClearAllPoints()
+        segment:SetPoint("TOPLEFT", bar, "TOPLEFT", 3 + (segment.index - 1) * (((MENU_WIDTH - 24) - 6) / #MODES), -3)
     end
 
+    menu.classRows = {}
     menu.rows = {}
     menu.rules = {}
     menu.catcher = catcher
@@ -535,9 +1002,103 @@ function UI:AcquireRow(index)
     row.rename:SetPoint("RIGHT", row.delete, "LEFT", -6, 0)
     row.delete:Hide()
     row.rename:Hide()
+
+    -- a switch and a second line, for the on/off rows
+    row.switch = CreateFrame("Frame", nil, row, "BackdropTemplate")
+    row.switch:SetSize(30, 16)
+    row.switch:SetPoint("LEFT", 10, 0)
+    row.switch:SetBackdrop({ bgFile = WHITE, edgeFile = TOOLTIP_BORDER, edgeSize = 8, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
+    row.switch.knob = row.switch:CreateTexture(nil, "OVERLAY")
+    row.switch.knob:SetTexture(WHITE)
+    row.switch.knob:SetSize(11, 11)
+    row.switch.knobMask = row.switch:CreateMaskTexture()
+    row.switch.knobMask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    row.switch.knobMask:SetAllPoints(row.switch.knob)
+    row.switch.knob:AddMaskTexture(row.switch.knobMask)
+    function row.switch:SetOn(on)
+        self.knob:ClearAllPoints()
+        if on then
+            self:SetBackdropColor(0.16, 0.55, 0.5, 1)
+            self:SetBackdropBorderColor(PLAN[1], PLAN[2], PLAN[3], 1)
+            self.knob:SetPoint("RIGHT", self, "RIGHT", -4, 0)
+            self.knob:SetVertexColor(1, 1, 0.95, 1)
+        else
+            self:SetBackdropColor(0.16, 0.14, 0.1, 1)
+            self:SetBackdropBorderColor(BRONZE_MUTED[1], BRONZE_MUTED[2], BRONZE_MUTED[3], 0.7)
+            self.knob:SetPoint("LEFT", self, "LEFT", 4, 0)
+            self.knob:SetVertexColor(0.8, 0.77, 0.69, 1)
+        end
+    end
+    row.switch:Hide()
+    row.hint = NewText(row, "GameFontDisableSmall")
+    row.hint:Hide()
+
     row:SetScript("OnEnter", function(self) self.hover:Show() end)
     row:SetScript("OnLeave", function(self) self.hover:Hide() end)
     menu.rows[index] = row
+    return row
+end
+
+-- A row of the browse-classes page: class icon in a ring, the class name in its colour, "you" for your own class, and
+-- how many plans you have for it. The class on show gets a wash of its colour and an accent bar. "you" and the plan
+-- count each have a column of their own, so rows line up whatever they say.
+function UI:AcquireClassRow(index)
+    local menu = self.menu
+    local row = menu.classRows[index]
+    if row then
+        return row
+    end
+
+    row = CreateFrame("Button", nil, menu)
+    row:SetHeight(CLASS_ROW_HEIGHT)
+    row.wash = row:CreateTexture(nil, "BACKGROUND")
+    row.wash:SetAllPoints()
+    row.hover = row:CreateTexture(nil, "BACKGROUND")
+    row.hover:SetAllPoints()
+    row.hover:Hide()
+    row.bar = row:CreateTexture(nil, "ARTWORK")
+    row.bar:SetWidth(3)
+    row.bar:SetPoint("TOPLEFT", 0, -4)
+    row.bar:SetPoint("BOTTOMLEFT", 0, 4)
+
+    row.ringMask = row:CreateMaskTexture()
+    row.ringMask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    row.iconMask = row:CreateMaskTexture()
+    row.iconMask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    row.ring = row:CreateTexture(nil, "ARTWORK")
+    row.ring:SetTexture(WHITE)
+    row.ring:SetSize(26, 26)
+    row.ring:SetPoint("LEFT", 14, 0)
+    row.ring:AddMaskTexture(row.ringMask)
+    row.ringMask:SetAllPoints(row.ring)
+    row.icon = row:CreateTexture(nil, "OVERLAY")
+    row.icon:SetSize(21, 21)
+    row.icon:SetPoint("CENTER", row.ring, "CENTER")
+    row.icon:AddMaskTexture(row.iconMask)
+    row.iconMask:SetAllPoints(row.icon)
+
+    row.name = NewText(row, "GameFontHighlight")
+    row.name:SetPoint("LEFT", row.ring, "RIGHT", 10, 0)
+
+    row.pill = CreateFrame("Frame", nil, row, "BackdropTemplate")
+    row.pill:SetSize(CLASS_PILL_WIDTH, 18)
+    row.pill:SetPoint("RIGHT", -12, 0)
+    row.pill:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    row.pill:SetBackdropColor(0.09, 0.075, 0.055, 1)
+    row.pill:SetBackdropBorderColor(0.24, 0.2, 0.12, 1)
+    row.pill.text = NewText(row.pill, "GameFontHighlightSmall")
+    row.pill.text:SetPoint("CENTER")
+    row.you = NewText(row, "GameFontDisableSmall")
+    row.you:SetPoint("RIGHT", row.pill, "LEFT", -10, 0)
+    row.you:SetText("you")
+
+    row:SetScript("OnEnter", function(self)
+        self.hover:Show()
+    end)
+    row:SetScript("OnLeave", function(self)
+        self.hover:Hide()
+    end)
+    menu.classRows[index] = row
     return row
 end
 
@@ -562,8 +1123,24 @@ function UI:ToggleMenu()
 end
 
 function UI:CloseMenu()
-    if self.menu then
-        self.menu.catcher:Hide()
+    local menu = self.menu
+    if not menu or not menu.catcher:IsShown() then
+        return
+    end
+    if menu:IsVisible() then
+        GlideOut(menu, function()
+            menu.catcher:Hide()
+        end)
+    else
+        menu.catcher:Hide() -- the whole window is closed: nothing to animate
+    end
+end
+
+-- Redraws the menu if it is open, on the page it is on: its contents may have changed under it.
+function UI:RebuildMenu()
+    local menu = self.menu
+    if menu and menu.catcher:IsShown() and not menu.closing then
+        self:OpenMenu(self.menuPage)
     end
 end
 
@@ -572,7 +1149,9 @@ function UI:OpenMenu(page)
     if not snap then
         return
     end
+    self.menuPage = page
     local menu = self.menu
+    CancelGlideOut(menu)
     local treeID = snap.treeID
     local browsing = TP.browse ~= nil
 
@@ -582,12 +1161,15 @@ function UI:OpenMenu(page)
     for _, rule in ipairs(menu.rules) do
         rule:Hide()
     end
-    for key, button in pairs(menu.modes) do
-        button:SetShown(not browsing and page ~= "classes")
-        button:SetActive(TP.db.mode == key)
+    for _, row in ipairs(menu.classRows) do
+        row:Hide()
+    end
+    menu.modeBar:SetShown(not browsing and page ~= "classes")
+    for key, segment in pairs(menu.modes) do
+        segment:SetActive(TP.db.mode == key)
     end
 
-    local y = (browsing or page == "classes") and -10 or -40
+    local y = (browsing or page == "classes") and -10 or -46
     local rowCount, ruleCount = 0, 0
 
     local function Rule()
@@ -607,6 +1189,9 @@ function UI:OpenMenu(page)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 6, y)
         row:SetPoint("TOPRIGHT", -6, y)
+        row:SetHeight(ROW_HEIGHT)
+        row.switch:Hide()
+        row.hint:Hide()
         row.label:SetText(label)
         local tint = color or { 1, 1, 1 }
         row.label:SetTextColor(tint[1], tint[2], tint[3])
@@ -636,28 +1221,93 @@ function UI:OpenMenu(page)
         return row
     end
 
+    -- A row with a switch at its left, a label and a line of explanation under it.
+    local function ToggleRow(label, hint, on, onClick)
+        rowCount = rowCount + 1
+        local row = self:AcquireRow(rowCount)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 6, y)
+        row:SetPoint("TOPRIGHT", -6, y)
+        row:SetHeight(36)
+        row.rename:Hide()
+        row.delete:Hide()
+        row.right:SetText("")
+        row.label:SetText(label)
+        row.label:SetTextColor(1, 1, 1)
+        row.label:SetJustifyH("LEFT")
+        row.label:ClearAllPoints()
+        row.label:SetPoint("TOPLEFT", 50, -5)
+        row.hint:SetText(hint)
+        row.hint:ClearAllPoints()
+        row.hint:SetPoint("TOPLEFT", 50, -20)
+        row.hint:Show()
+        row.switch:SetOn(on)
+        row.switch:Show()
+        row:SetScript("OnClick", onClick)
+        row:Show()
+        y = y - 36
+        return row
+    end
+
     local function Finish()
+        local wasOpen = menu.catcher:IsShown()
         menu:SetHeight(-y + 10)
         menu:ClearAllPoints()
         menu:SetPoint("TOP", self.chip, "BOTTOM", 0, -4)
         menu.catcher:Show()
+        if not wasOpen then
+            GlideIn(menu)
+        end
     end
 
     if page == "classes" then
-        Row("< Back", nil, function() UI:OpenMenu() end, { 0.6, 0.6, 0.6 })
+        Row("< Back", "Browse classes", function() UI:OpenMenu() end, { 0.6, 0.6, 0.6 })
         Rule()
-        for _, entry in ipairs(TP.CLASSES) do
+        for index, entry in ipairs(TP.CLASSES) do
             local own = entry.tree == TP.ownTreeID
             local viewing = (TP.browse == entry.tree) or (own and not browsing)
             local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[entry.token]
-            Row((viewing and "> " or "   ") .. TP:ClassName(entry), own and "you" or nil, function()
-                UI:CloseMenu()
+            local r, g, b = 1, 1, 1
+            if classColor then
+                r, g, b = classColor.r, classColor.g, classColor.b
+            end
+
+            local row = self:AcquireClassRow(index)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 6, y)
+            row:SetPoint("TOPRIGHT", -6, y)
+            row.hover:SetColorTexture(r, g, b, 0.08)
+            row.wash:SetColorTexture(r, g, b, viewing and 0.16 or 0)
+            row.bar:SetColorTexture(r, g, b, 1)
+            row.bar:SetShown(viewing)
+            row.ring:SetVertexColor(r, g, b, viewing and 1 or 0.55)
+            local atlas = "classicon-" .. entry.token:lower()
+            if HasAtlas(atlas) then
+                row.icon:SetAtlas(atlas)
+            else
+                row.icon:SetTexture("Interface\\Icons\\ClassIcon_" .. entry.token:sub(1, 1) .. entry.token:sub(2):lower())
+            end
+            row.name:SetText(TP:ClassName(entry))
+            row.name:SetTextColor(r, g, b)
+            row.you:SetShown(own)
+            local saved = TP.db.plans[entry.tree]
+            local count = saved and #saved or 0
+            if count > 0 then
+                row.pill.text:SetText(count .. (count == 1 and " plan" or " plans"))
+                row.pill:Show()
+            else
+                row.pill:Hide()
+            end
+
+            row:SetScript("OnClick", function()
                 if own then
                     UI:CloseViewer()
                 else
                     UI:OpenViewer(entry)
                 end
-            end, classColor and { classColor.r, classColor.g, classColor.b } or nil)
+            end)
+            row:Show()
+            y = y - CLASS_ROW_HEIGHT
         end
         Finish()
         return
@@ -665,7 +1315,6 @@ function UI:OpenMenu(page)
 
     if browsing then
         Row("< Back to my talents", nil, function()
-            UI:CloseMenu()
             UI:CloseViewer()
         end, { 0.6, 0.6, 0.6 })
     end
@@ -679,12 +1328,11 @@ function UI:OpenMenu(page)
         local row
         row = Row((selected and "> " or "   ") .. plan.name, #plan.order .. "/" .. TP.POINT_CAP, function()
             TP:SetActive(treeID, plan)
-            UI:CloseMenu()
             UI:Refresh()
+            UI:RebuildMenu()
         end, selected and PLAN or nil, {
             rename = function()
                 TP:SetActive(treeID, plan)
-                UI:CloseMenu()
                 UI:Refresh()
                 UI:OpenSheet("rename")
             end,
@@ -709,22 +1357,30 @@ function UI:OpenMenu(page)
         })
     end
     Row("+ New plan", nil, function()
-        UI:CloseMenu()
         UI:OpenSheet("new")
     end, GOLD)
 
     Rule()
     Row("Import build...", nil, function()
-        UI:CloseMenu()
         UI:OpenSheet("import")
     end)
     if snap.plan then
         Row("Export build...", nil, function()
-            UI:CloseMenu()
             UI:OpenSheet("export")
         end)
     end
     Rule()
+    if not browsing then
+        ToggleRow("Dim other talents", "Guide mode only", TP.db.focus, function()
+            TP.db.focus = not TP.db.focus
+            UI:Refresh()
+            UI:OpenMenu(page)
+        end)
+    end
+    ToggleRow("Edit mode animations", "Rings, flashes and sparks", TP.db.animations ~= false, function()
+        TP.db.animations = not (TP.db.animations ~= false)
+        UI:RebuildMenu()
+    end)
     Row("Browse other classes...", nil, function() UI:OpenMenu("classes") end, GOLD)
     Finish()
 end
@@ -811,10 +1467,15 @@ function UI:OpenSheet(mode)
         return
     end
 
+    CancelGlideOut(sheet.card)
+    local wasOpen = sheet:IsShown()
     sheet.mode = mode
     sheet.parsed = nil
     sheet.exportText = nil
     sheet:Show()
+    if not wasOpen then
+        GlideIn(sheet.card)
+    end
 
     local sharing = mode == "import" or mode == "export"
     sheet.tabExport:SetShown(sharing)
@@ -860,8 +1521,15 @@ end
 
 function UI:CloseSheet()
     local sheet = self.sheet
-    if sheet then
-        sheet.edit:ClearFocus()
+    if not sheet then
+        return
+    end
+    sheet.edit:ClearFocus()
+    if sheet:IsShown() and sheet:IsVisible() then
+        GlideOut(sheet.card, function()
+            sheet:Hide()
+        end)
+    else
         sheet:Hide()
     end
 end
@@ -942,13 +1610,14 @@ function UI:SheetAction()
     end
     self:CloseSheet()
     self:Refresh()
+    self:RebuildMenu()
 end
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Clicking talents in edit mode
 ------------------------------------------------------------------------------------------------------------------------
 
-function UI:NodeClicked(nodeID, mouseButton)
+function UI:NodeClicked(nodeID, mouseButton, overlay)
     if TP:Mode() ~= "edit" or not nodeID then
         return
     end
@@ -964,14 +1633,25 @@ function UI:NodeClicked(nodeID, mouseButton)
         end
     end
 
+    local justMaxed, added, statesBefore = false, false, nil
     if mouseButton == "RightButton" then
         local ok, reason = TP:RemovePoint(snap, nodeID)
         if not ok then
             TP:Error(TP:ErrorText(reason))
+        elseif IsShiftKeyDown() then
+            -- Shift-right-click takes out every point of the talent. It stops quietly at the first one that something
+            -- else depends on.
+            while TP:RemovePoint(snap, nodeID) do
+            end
         end
     else
         local node = snap.meta.nodes[nodeID]
         local times = IsShiftKeyDown() and node and node.max or 1
+        local function Shown()
+            return math.min(TP.view or #snap.plan.order, #snap.plan.order)
+        end
+        local before = TP:PlannedRank(snap.plan, nodeID, Shown())
+        statesBefore = TP:NodeStates(snap.meta, snap.plan.order, Shown())
         for attempt = 1, times do
             local ok, reason = TP:AddPoint(snap, nodeID)
             if not ok then
@@ -981,8 +1661,67 @@ function UI:NodeClicked(nodeID, mouseButton)
                 break
             end
         end
+        -- the point that fills a talent gets the flash
+        local after = TP:PlannedRank(snap.plan, nodeID, Shown())
+        justMaxed = node ~= nil and before < node.max and after >= node.max
+        added = after > before
     end
     self:Refresh()
+    if justMaxed and overlay and overlay.PlayMaxedFlash then
+        overlay:PlayMaxedFlash()
+    elseif added and overlay and overlay.PlayPing then
+        overlay:PlayPing()
+    end
+    if added then
+        self:PlayUnlocks(snap, nodeID, statesBefore)
+    end
+end
+
+-- The overlay of a talent, in whichever window is showing.
+function UI:OverlayFor(nodeID)
+    local frame = TP.browse and self.viewer or self.tf
+    if not frame or not frame.EnumerateAllTalentButtons then
+        return nil
+    end
+    for button in frame:EnumerateAllTalentButtons() do
+        local info = button.GetNodeInfo and button:GetNodeInfo()
+        if info and info.ID == nodeID then
+            return button.TalentsForgeOverlay
+        end
+    end
+end
+
+-- A talent this point has just opened wakes up, and every talent that leads to it (and is full) sends a spark to it. If
+-- the point opened a whole row, each talent in the row gets sparks from the talents it is connected to, whichever of them
+-- was clicked. A talent opened only by a row's point gate has nothing leading to it, so it just wakes.
+function UI:PlayUnlocks(snap, nodeID, before)
+    if not before or TP.db.animations == false then
+        return
+    end
+    local count = math.min(TP.view or #snap.plan.order, #snap.plan.order)
+    local after = TP:NodeStates(snap.meta, snap.plan.order, count)
+    local sent = 0
+    for targetID, state in pairs(after) do
+        if state == "available" and before[targetID] == "locked" then
+            local target = self:OverlayFor(targetID)
+            if target then
+                local fed = false
+                for _, edge in ipairs(snap.meta.nodes[targetID].incoming) do
+                    if after[edge.src] == "maxed" and sent < 16 then
+                        local source = self:OverlayFor(edge.src)
+                        if source and source.PlaySpark then
+                            sent = sent + 1
+                            fed = true
+                            source:PlaySpark(target)
+                        end
+                    end
+                end
+                if not fed then
+                    target:PlayWake()
+                end
+            end
+        end
+    end
 end
 
 ------------------------------------------------------------------------------------------------------------------------
@@ -1009,6 +1748,19 @@ local function PlanStats(snap, count)
         end
     end
     return stats
+end
+
+-- The planned points after the first `from`: the level of the first one for each talent. They are what the slider has
+-- hidden, shown as ghosts.
+local function FutureStats(snap, from)
+    local future = {}
+    for index = from + 1, #snap.plan.order do
+        local nodeID = snap.plan.order[index].n
+        if not future[nodeID] then
+            future[nodeID] = TP:LevelOf(index)
+        end
+    end
+    return future
 end
 
 local function Truncate(text, length)
@@ -1050,7 +1802,8 @@ function UI:RefreshChip(snap, mode)
     chip:SetWidth(math.max(120, chip.text:GetStringWidth() + 58))
 
     local active = mode ~= "off" and plan ~= nil
-    local color = active and PLAN or BRONZE
+    local finished = plan ~= nil and mode == "guide" and snap.nextNode == nil and #plan.order > 0
+    local color = finished and GOLD or (active and PLAN or BRONZE)
     chip.dot:SetVertexColor(color[1], color[2], color[3])
     chip:SetBackdropBorderColor(color[1], color[2], color[3], 1)
 end
@@ -1086,11 +1839,14 @@ function UI:RefreshOverlays(frame, snap, mode)
 
     local editing = snap and mode == "edit" and snap.plan ~= nil
     local guiding = snap and mode == "guide" and snap.plan ~= nil and snap.nextNode ~= nil
-    local stats, states
+    local stats, states, future
     if editing then
         local count = math.min(TP.view or #snap.plan.order, #snap.plan.order)
         stats = PlanStats(snap, count)
         states = TP:NodeStates(snap.meta, snap.plan.order, count) -- what could be taken after those points
+        if TP.view and TP.view < #snap.plan.order then
+            future = FutureStats(snap, count)
+        end
     end
 
     for button in tf:EnumerateAllTalentButtons() do
@@ -1103,6 +1859,9 @@ function UI:RefreshOverlays(frame, snap, mode)
             if overlay then
                 overlay:Hide()
                 overlay.availHost:Hide()
+                overlay.sheenGroup:Stop()
+                overlay.sheenClip:Hide()
+                overlay.dim:Hide()
             end
         else
             overlay = overlay or self:BuildOverlay(button)
@@ -1113,6 +1872,7 @@ function UI:RefreshOverlays(frame, snap, mode)
             local ring, badge, glow = overlay.ring, overlay.badge, overlay.glow
             local show = false
             local isNext = false
+            local ghost = false
 
             local state = states and states[nodeID]
             local canTake = state == "available" or state == "partial"
@@ -1139,6 +1899,15 @@ function UI:RefreshOverlays(frame, snap, mode)
                     else
                         badge:Hide()
                     end
+                elseif future and future[nodeID] then
+                    -- planned for a later level than the slider shows: a faint ghost of its ring and badge
+                    show = true
+                    ghost = true
+                    ring:SetBackdropBorderColor(PLAN[1], PLAN[2], PLAN[3], 1)
+                    overlay.rank:Hide()
+                    badge.text:SetText(tostring(future[nodeID]))
+                    badge:SetWidth(badge.text:GetStringWidth() + 8)
+                    badge:Show()
                 else
                     overlay.rank:Hide()
                     badge:Hide()
@@ -1159,13 +1928,27 @@ function UI:RefreshOverlays(frame, snap, mode)
 
             ring:SetShown(show)
             glow:SetShown(isNext)
+            badge:SetAlpha(ghost and 0.5 or 1)
             if isNext then
                 if not overlay.pulse:IsPlaying() then
                     overlay.pulse:Play()
                 end
             else
                 overlay.pulse:Stop()
-                ring:SetAlpha(1)
+                ring:SetAlpha(ghost and 0.35 or 1)
+            end
+
+            -- Guide mode: a shine sweeps over the next talent, and the rest can be dimmed.
+            overlay.dim:SetShown(guiding and TP.db.focus and not isNext)
+            if guiding and isNext then
+                overlay.sheenSweep:SetOffset((overlay.button:GetWidth() or 40) + 28, 0)
+                overlay.sheenClip:Show()
+                if not overlay.sheenGroup:IsPlaying() then
+                    overlay.sheenGroup:Play()
+                end
+            else
+                overlay.sheenGroup:Stop()
+                overlay.sheenClip:Hide()
             end
         end
     end
@@ -1187,6 +1970,7 @@ function UI:Refresh()
     end
     self:RefreshChip(snap, mode)
     self:RefreshBar(snap, mode)
+    self:TrackCompletion(snap, mode)
     -- While another class is open, the game's own window is covered and gets no overlays.
     self:RefreshOverlays(self.tf, not browsing and snap or nil, mode)
     if browsing then
@@ -1776,7 +2560,6 @@ function UI:OpenViewer(entry)
 
     TP.browse = entry.tree
     TP.view = nil
-    self:CloseMenu()
     self.viewer.meta = nil -- lay it out afresh for this class
     self.viewer:Show()
 
@@ -1785,6 +2568,7 @@ function UI:OpenViewer(entry)
         TP:NewPlan(snap.treeID, "Plan")
     end
     self:Refresh()
+    self:RebuildMenu()
 end
 
 function UI:CloseViewer()
@@ -1796,10 +2580,10 @@ function UI:CloseViewer()
     TP.browse = nil
     TP.view = nil
     viewer:Hide()
-    self:CloseMenu()
     self:CloseSheet()
     if wasBrowsing then
         self:Refresh()
+        self:RebuildMenu()
     end
 end
 
