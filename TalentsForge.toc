@@ -12,7 +12,7 @@
 ## Notes-zhTW: 直接在天賦視窗中規劃天賦配置：依順序儲存、跟隨下一個天賦、瀏覽其他職業，並支援匯入和匯出。
 ## Notes-itIT: Pianifica le build dei talenti direttamente nella finestra dei talenti: salvale in ordine, segui il prossimo talento, esplora le altre classi, importa ed esporta.
 ## Author: Sokratis
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: TalentsForgeDB
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
 ## X-License: MIT
