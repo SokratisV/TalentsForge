@@ -3,6 +3,7 @@
 -- Plans are virtual. Nothing here ever spends a real talent point.
 local ADDON, TP = ...
 _G.TalentsForge = TP
+local L = TP.L
 
 local POINT_CAP = 51
 local FIRST_LEVEL = 10 -- the first talent point is spent at level 10
@@ -15,26 +16,26 @@ local EDGE_SUFFICIENT = EDGE_TYPES and EDGE_TYPES.SufficientForAvailability or 2
 local EDGE_EXCLUSIVE = EDGE_TYPES and EDGE_TYPES.MutuallyExclusive or 4
 
 TP.REASONS = {
-    max = "That talent is already at max rank in this plan.",
-    cap = "The plan already uses all 51 points.",
-    prereq = "Plan the talent that leads to it first.",
-    gate = "Plan more points in this tree first.",
-    level = "That talent isn't available by level 60.",
-    unknown = "That talent isn't in this tree.",
-    none = "There's no planned point to remove there.",
-    noplan = "Create a plan first.",
-    dependents = "Other planned talents depend on this one. Remove those first.",
-    format = "That doesn't look like a Talents Forge build string.",
-    checksum = "That string is damaged. Copy it again.",
-    version = "That string is from a newer version of Talents Forge.",
-    invalid = "That build doesn't fit this talent tree.",
-    empty = "Nothing to export yet. Plan at least one talent.",
+    max = L["That talent is already at max rank in this plan."],
+    cap = L["The plan already uses all 51 points."],
+    prereq = L["Plan the talent that leads to it first."],
+    gate = L["Plan more points in this tree first."],
+    level = L["That talent isn't available by level 60."],
+    unknown = L["That talent isn't in this tree."],
+    none = L["There's no planned point to remove there."],
+    noplan = L["Create a plan first."],
+    dependents = L["Other planned talents depend on this one. Remove those first."],
+    format = L["That doesn't look like a Talents Forge build string."],
+    checksum = L["That string is damaged. Copy it again."],
+    version = L["That string is from a newer version of Talents Forge."],
+    invalid = L["That build doesn't fit this talent tree."],
+    empty = L["Nothing to export yet. Plan at least one talent."],
 }
 
 function TP:ErrorText(err, extra)
     if err == "class" then
         local name = extra and GetClassInfo and GetClassInfo(extra)
-        return "That build is for " .. (name or "another class") .. "."
+        return L["That build is for %s."]:format(name or L["another class"])
     end
     return TP.REASONS[err] or tostring(err)
 end
@@ -126,6 +127,46 @@ function TP:ClassByID(classID)
     end
 end
 
+-- What the client calls one of a class's three trees (its answer is in your language), or nil.
+local function ClientSpecName(entry, index)
+    if not (C_Traits and C_Traits.GetGroupDisplayInfoByTreeID) then
+        return nil
+    end
+    local ok, infos = pcall(C_Traits.GetGroupDisplayInfoByTreeID, entry.tree)
+    if not ok or type(infos) ~= "table" or #infos ~= 3 then
+        return nil
+    end
+    local sorted = {}
+    for i, info in ipairs(infos) do
+        sorted[i] = info
+    end
+    table.sort(sorted, function(a, b) return (a.orderIndex or 0) < (b.orderIndex or 0) end)
+    local name = sorted[index] and sorted[index].name
+    if type(name) == "string" and name ~= "" and not (issecretvalue and issecretvalue(name)) then
+        return name
+    end
+end
+
+-- The name of one of a class's three trees. Outside English the client's answer wins, and the English name below is the
+-- fallback. On an English client the built-in names are the ones checked against the game, so they are shown; the client is
+-- asked all the same, and when it disagrees (a different name, or the trees in another order) one line says so, once per
+-- class, so a mismatch shows up the first time that class is opened.
+function TP:SpecName(entry, index)
+    local given = ClientSpecName(entry, index)
+    local locale = GetLocale and GetLocale() or "enUS"
+    if locale ~= "enUS" and locale ~= "enGB" then
+        return given or entry.specs[index]
+    end
+    if given and given ~= entry.specs[index] then
+        self.specNoted = self.specNoted or {}
+        if not self.specNoted[entry.token] then
+            self.specNoted[entry.token] = true
+            self:Print(("Tree %d of %s: the game says \"%s\", this addon says \"%s\"."):format(index, entry.token, given, entry.specs[index]))
+        end
+    end
+    return entry.specs[index]
+end
+
 function TP:ClassName(entry)
     local name = GetClassInfo and GetClassInfo(entry.id)
     return name or (entry.token:sub(1, 1) .. entry.token:sub(2):lower())
@@ -136,11 +177,61 @@ function TP:Mode()
     return self.browse and "edit" or self.db.mode
 end
 
+-- The window everything is drawn in: the game's talent window, or (below the level where talents unlock, when that window
+-- has nothing to show) the small window of our own that /tforge browse opens.
 function TP:GetTalentFrame()
+    if self.host then
+        return self.host
+    end
     if PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame then
         return PlayerSpellsFrame.TalentsFrame
     end
     return ClassTalentFrame
+end
+
+-- True once the game's own talent window has something to show. Before that the talent tab is locked.
+function TP:TalentsUnlocked()
+    if (UnitLevel("player") or 0) >= FIRST_LEVEL then
+        return true
+    end
+    return C_ClassTalents ~= nil and C_ClassTalents.GetActiveConfigID ~= nil and C_ClassTalents.GetActiveConfigID() ~= nil
+end
+
+-- The tree of the class you are playing, from the class itself rather than from a talent config.
+function TP:OwnClass()
+    local token = UnitClassBase and UnitClassBase("player") or select(2, UnitClass("player"))
+    for _, entry in ipairs(self.CLASSES) do
+        if entry.token == token then
+            return entry
+        end
+    end
+end
+
+-- A talent config to read trees through. The game's window knows its own; without it (talents not unlocked yet) any combat
+-- config the character has will do, since the trees of every class answer through it.
+function TP:FindConfigID(talentFrame)
+    local configID = talentFrame and talentFrame.GetConfigID and talentFrame:GetConfigID()
+    if configID then
+        return configID
+    end
+    if C_ClassTalents and C_ClassTalents.GetActiveConfigID then
+        configID = C_ClassTalents.GetActiveConfigID()
+        if configID then
+            return configID
+        end
+    end
+    if C_SpecializationInfo and C_SpecializationInfo.GetActiveSpecGroup and C_SpecializationInfo.GetCombatConfigIDForSpecGroup then
+        local group = C_SpecializationInfo.GetActiveSpecGroup()
+        configID = group and C_SpecializationInfo.GetCombatConfigIDForSpecGroup(group)
+        if configID then
+            return configID
+        end
+    end
+    if C_Traits and C_Traits.GetConfigsByType then
+        local combat = Enum and Enum.TraitConfigType and Enum.TraitConfigType.Combat or 1
+        local configs = C_Traits.GetConfigsByType(combat)
+        return configs and configs[1]
+    end
 end
 
 -- Returns talentFrame, configID, treeID, or nil while the tree isn't ready.
@@ -150,15 +241,16 @@ function TP:GetContext()
         return nil
     end
 
-    local configID = talentFrame.GetConfigID and talentFrame:GetConfigID()
-    if not configID and C_ClassTalents and C_ClassTalents.GetActiveConfigID then
-        configID = C_ClassTalents.GetActiveConfigID()
-    end
+    local configID = self:FindConfigID(talentFrame)
 
     local treeID = talentFrame.GetTalentTreeID and talentFrame:GetTalentTreeID()
     if not treeID and configID and C_Traits.GetConfigInfo then
         local configInfo = C_Traits.GetConfigInfo(configID)
         treeID = configInfo and configInfo.treeIDs and configInfo.treeIDs[1]
+    end
+    if not treeID and self.host then
+        local own = self:OwnClass()
+        treeID = own and own.tree
     end
 
     if not configID or not treeID then
@@ -458,7 +550,7 @@ function TP:GetMeta(configID, treeID)
     if not ok then
         if not self.warnedMeta then
             self.warnedMeta = true
-            self:Print("Couldn't read the talent tree: " .. tostring(result))
+            self:Print(L["Couldn't read the talent tree: %s"]:format(tostring(result)))
         end
         return { configID = configID, treeID = treeID, nodes = {}, bySpell = {}, groups = {}, count = 0 }
     end
@@ -485,7 +577,7 @@ function TP:NodeName(meta, nodeID)
             return name
         end
     end
-    return "talent"
+    return L["talent"]
 end
 
 -- Points spent per tree, left to right. Falls back to a single total when the trees can't be told apart.
@@ -644,7 +736,7 @@ end
 function TP:UniqueName(treeID, base)
     base = Trim(base)
     if base == "" then
-        base = "Plan"
+        base = L["Plan"]
     end
     base = base:sub(1, 28)
     if not self:FindPlan(treeID, base) then
@@ -692,7 +784,7 @@ function TP:RenamePlan(treeID, plan, name)
     end
     local existing = self:FindPlan(treeID, name)
     if existing and existing ~= plan then
-        return false, "That name is already used."
+        return false, L["That name is already used."]
     end
     local wasActive = self.db.active[treeID] == plan.name
     plan.name = name
@@ -877,7 +969,7 @@ function TP:SetMode(mode)
     if mode == "edit" then
         local _, _, treeID = self:GetContext()
         if treeID and not self:ActivePlan(treeID) then
-            self:NewPlan(treeID, "Plan")
+            self:NewPlan(treeID, L["Plan"])
         end
     end
     if self.UI then
@@ -912,14 +1004,20 @@ SlashCmdList["TALENTSFORGE"] = function(input)
     local command, argument = string.match(string.lower(Trim(input)), "^(%S*)%s*(.-)$")
     if command == "mode" and (argument == "off" or argument == "guide" or argument == "edit") then
         TP:SetMode(argument)
-        TP:Print("Mode: " .. argument)
+        TP:Print(L["Mode: %s"]:format(argument == "off" and L["Off"] or argument == "guide" and L["Guide"] or L["Edit"]))
+    elseif command == "browse" then
+        TP.UI:OpenBrowser(argument)
+    elseif command == "profile" then
+        TP.UI:OpenProfile(argument == "import" and "import" or "export")
     elseif command == "reset" then
         TP.db.pos = {}
         TP.UI:ResetPositions()
-        TP:Print("Moved the chip and the bar back to their default spots.")
+        TP:Print(L["Moved the chip, the bar and the browser window back to their default spots."])
     else
-        TP:Print("Open your talents and click the chip at the top. Shift-drag the chip or the bar to move them.")
-        TP:Print("/tforge mode off|guide|edit  -  switch mode")
-        TP:Print("/tforge reset  -  put the chip and bar back where they started")
+        TP:Print(L["Open your talents and click the chip at the top. Shift-drag the chip or the bar to move them."])
+        TP:Print(L["/tforge browse [class]  -  plan any class's talents, even before talents unlock"])
+        TP:Print(L["/tforge mode off|guide|edit  -  switch mode"])
+        TP:Print(L["/tforge profile [import]  -  copy or paste your whole setup: settings, positions and plans"])
+        TP:Print(L["/tforge reset  -  put the chip, bar and browser window back where they started"])
     end
 end

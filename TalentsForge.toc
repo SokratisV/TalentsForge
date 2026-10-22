@@ -1,6 +1,16 @@
 ## Interface: 16001
 ## Title: Talents Forge
 ## Notes: Plan talent builds right inside the talent window: save them in order, follow your next talent, browse other classes, import and export.
+## Notes-deDE: Plane Talent-Builds direkt im Talentfenster: speichere sie der Reihe nach, folge deinem nächsten Talent, durchsuche andere Klassen, importiere und exportiere.
+## Notes-frFR: Planifiez vos builds de talents directement dans la fenêtre des talents : enregistrez-les dans l'ordre, suivez votre prochain talent, parcourez les autres classes, importez et exportez.
+## Notes-esES: Planifica builds de talentos dentro de la propia ventana de talentos: guárdalas en orden, sigue tu próximo talento, explora otras clases, importa y exporta.
+## Notes-esMX: Planifica builds de talentos dentro de la propia ventana de talentos: guárdalas en orden, sigue tu próximo talento, explora otras clases, importa y exporta.
+## Notes-ptBR: Planeje builds de talentos dentro da própria janela de talentos: salve-as em ordem, siga seu próximo talento, explore outras classes, importe e exporte.
+## Notes-ruRU: Планируйте сборки талантов прямо в окне талантов: сохраняйте их по порядку, следуйте за следующим талантом, просматривайте другие классы, импортируйте и экспортируйте.
+## Notes-koKR: 특성 창 안에서 바로 특성 빌드를 계획하세요. 순서대로 저장하고, 다음 특성을 따라가고, 다른 직업을 둘러보고, 가져오기와 내보내기를 할 수 있습니다.
+## Notes-zhCN: 直接在天赋窗口中规划天赋配置：按顺序保存、跟随下一个天赋、浏览其他职业，并支持导入和导出。
+## Notes-zhTW: 直接在天賦視窗中規劃天賦配置：依順序儲存、跟隨下一個天賦、瀏覽其他職業，並支援匯入和匯出。
+## Notes-itIT: Pianifica le build dei talenti direttamente nella finestra dei talenti: salvale in ordine, segui il prossimo talento, esplora le altre classi, importa ed esporta.
 ## Author: Sokratis
 ## Version: 1.1.0
 ## SavedVariables: TalentsForgeDB
@@ -9,6 +19,19 @@
 ## X-Website: https://github.com/SokratisV/TalentsForge
 ## X-Curse-Project-ID: 1749953
 
+Locales\Locale.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+Locales\itIT.lua
+
 Core.lua
 Codec.lua
+Profile.lua
 UI.lua

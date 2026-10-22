@@ -95,6 +95,15 @@ local function Checksum(bytes, count)
     return sum
 end
 
+-- The same pieces, for the settings profile in Profile.lua.
+TP.Codec = {
+    Base64Encode = Base64Encode,
+    Base64Decode = Base64Decode,
+    PushVarint = PushVarint,
+    ReadVarint = ReadVarint,
+    Checksum = Checksum,
+}
+
 local function PlayerClassID()
     local classID = select(3, UnitClass("player"))
     if (issecretvalue and issecretvalue(classID)) or type(classID) ~= "number" then

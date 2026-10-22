@@ -6,6 +6,7 @@
 --   viewer  another class's tree, laid out as three panels like the game's own
 -- Look: Blizzard's panel buttons, close button and input box, the game's font objects, and the bronze border FlareUI uses.
 local ADDON, TP = ...
+local L = TP.L
 local UI = {}
 TP.UI = UI
 
@@ -27,7 +28,7 @@ local BASE = { 0.045, 0.04, 0.035 } -- the near-black behind a spec background
 
 local AVAILABLE_GLOW = "talents-node-square-greenglow"
 
-local MODES = { { "off", "Off" }, { "guide", "Guide" }, { "edit", "Edit" } }
+local MODES = { { "off", L["Off"] }, { "guide", L["Guide"] }, { "edit", L["Edit"] } }
 local STRATA = "DIALOG"
 
 local PANEL_BACKDROP = {
@@ -80,6 +81,12 @@ local function NewButton(parent, label, width, height, onClick)
     button:SetSize(width, height)
     button:SetText(label)
     button:SetScript("OnClick", onClick)
+    -- Wide enough for its label, never narrower than it started.
+    button.minWidth = width
+    function button:FitText()
+        local text = self.GetTextWidth and self:GetTextWidth() or 0
+        self:SetWidth(math.max(self.minWidth, text + 24))
+    end
     function button:SetActive(active)
         self.active = active and true or false
         if self.active then
@@ -118,6 +125,19 @@ local function NewFlatButton(parent, label, width, height, onClick)
         self.text:SetText(text)
         self.tone = tone
         self:Restyle()
+    end
+    -- Wide enough for the longest of the given labels (other languages run longer), never narrower than it started.
+    button.minWidth = width
+    function button:Fit(...)
+        local widest = self.minWidth
+        local current = self.text:GetText()
+        for index = 1, select("#", ...) do
+            self.text:SetText((select(index, ...)))
+            widest = math.max(widest, (self.text:GetStringWidth() or 0) + 18)
+        end
+        self.text:SetText(current)
+        self:SetWidth(widest)
+        return widest
     end
 
     button:SetScript("OnEnter", function(self)
@@ -358,8 +378,8 @@ function UI:BuildChip(tf)
     chip:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:SetText("Talents Forge", 1, 0.82, 0)
-        GameTooltip:AddLine("Click for plans, modes, import and export.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift-drag to move.", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine(L["Click for plans, modes, import and export."], 1, 1, 1, true)
+        GameTooltip:AddLine(L["Shift-drag to move."], 0.6, 0.6, 0.6, true)
         GameTooltip:Show()
     end)
     chip:SetScript("OnLeave", GameTooltip_Hide)
@@ -439,7 +459,7 @@ function UI:BuildBar(tf)
     bar:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:SetText("Talents Forge", 1, 0.82, 0)
-        GameTooltip:AddLine("Shift-drag to move.", 1, 1, 1, true)
+        GameTooltip:AddLine(L["Shift-drag to move."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
     bar:SetScript("OnLeave", GameTooltip_Hide)
@@ -494,26 +514,26 @@ function UI:BuildBar(tf)
 
     bar.levelValue = NewText(bar, "GameFontNormal")
     bar.levelValue:SetPoint("LEFT", slider, "RIGHT", 8, 0)
-    bar.levelValue:SetWidth(36)
+    bar.levelValue:SetWidth(44)
     bar.levelValue:SetJustifyH("LEFT")
     local secondRule = Rule(bar.levelValue, 4)
 
-    bar.import = NewFlatButton(bar, "Import", 52, 22, function() UI:OpenSheet("import") end)
+    bar.import = NewFlatButton(bar, L["Import"], 52, 22, function() UI:OpenSheet("import") end)
     bar.import:SetPoint("LEFT", secondRule, "RIGHT", 8, 0)
-    bar.export = NewFlatButton(bar, "Export", 52, 22, function() UI:OpenSheet("export") end)
+    bar.export = NewFlatButton(bar, L["Export"], 52, 22, function() UI:OpenSheet("export") end)
     bar.export:SetPoint("LEFT", bar.import, "RIGHT", 4, 0)
-    bar.clear = NewFlatButton(bar, "Clear", 48, 22, function(self)
+    bar.clear = NewFlatButton(bar, L["Clear"], 48, 22, function(self)
         if not self.confirm then
             self.confirm = true
-            self:SetText("Sure?", RED)
+            self:SetText(L["Sure?"], RED)
             C_Timer.After(2, function()
                 self.confirm = nil
-                self:SetText("Clear")
+                self:SetText(L["Clear"])
             end)
             return
         end
         self.confirm = nil
-        self:SetText("Clear")
+        self:SetText(L["Clear"])
         local snap = UI.snap
         if snap and snap.plan then
             snap.plan.order = {}
@@ -522,6 +542,10 @@ function UI:BuildBar(tf)
         end
     end)
     bar.clear:SetPoint("LEFT", bar.export, "RIGHT", 4, 0)
+
+    -- The buttons are as wide as their words need, and the bar as wide as everything in it.
+    local buttonsWidth = bar.import:Fit(L["Import"]) + bar.export:Fit(L["Export"]) + bar.clear:Fit(L["Clear"], L["Sure?"])
+    bar:SetWidth(12 + 80 + 6 + 1 + 10 + 80 + 8 + 44 + 4 + 1 + 8 + buttonsWidth + 8 + 12)
 
     -- right under the chip, wherever the chip is
     MakeMovable(bar, "bar", tf, { "TOP", self.chip, "BOTTOM", 0, -4 })
@@ -569,13 +593,13 @@ function UI:ShowPlannedTooltip(owner, nodeID)
 
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText(TP:NodeName(snap.meta, nodeID), 1, 1, 1)
-    GameTooltip:AddLine("Planned rank " .. planned .. "/" .. node.max, PLAN[1], PLAN[2], PLAN[3])
+    GameTooltip:AddLine(L["Planned rank %d/%d"]:format(planned, node.max), PLAN[1], PLAN[2], PLAN[3])
     if not AddRankText(node.entry, planned) then
         return false
     end
     if planned < node.max then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(TALENT_BUTTON_TOOLTIP_NEXT_RANK or "Next rank:", GOLD[1], GOLD[2], GOLD[3])
+        GameTooltip:AddLine(TALENT_BUTTON_TOOLTIP_NEXT_RANK or L["Next rank:"], GOLD[1], GOLD[2], GOLD[3])
         AddRankText(node.entry, planned + 1)
     end
     return true
@@ -863,10 +887,10 @@ function UI:BuildOverlay(button)
             end
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Talents Forge", PLAN[1], PLAN[2], PLAN[3])
-            GameTooltip:AddLine("Left-click: plan a point", 1, 1, 1)
-            GameTooltip:AddLine("Shift-click: plan every rank", 1, 1, 1)
-            GameTooltip:AddLine("Right-click: remove a point", 1, 1, 1)
-            GameTooltip:AddLine("Shift-right-click: remove every point", 1, 1, 1)
+            GameTooltip:AddLine(L["Left-click: plan a point"], 1, 1, 1)
+            GameTooltip:AddLine(L["Shift-click: plan every rank"], 1, 1, 1)
+            GameTooltip:AddLine(L["Right-click: remove a point"], 1, 1, 1)
+            GameTooltip:AddLine(L["Shift-right-click: remove every point"], 1, 1, 1)
             GameTooltip:Show()
         end
     end)
@@ -996,9 +1020,9 @@ function UI:AcquireRow(index)
     row.right = NewText(row, "GameFontDisableSmall")
     row.right:SetPoint("RIGHT", -8, 0)
     -- a plan's row also carries Rename and Delete at its right-hand end
-    row.delete = NewLink(row, "Delete", RED)
+    row.delete = NewLink(row, L["Delete"], RED)
     row.delete:SetPoint("RIGHT", -8, 0)
-    row.rename = NewLink(row, "Rename", GOLD)
+    row.rename = NewLink(row, L["Rename"], GOLD)
     row.rename:SetPoint("RIGHT", row.delete, "LEFT", -6, 0)
     row.delete:Hide()
     row.rename:Hide()
@@ -1081,16 +1105,26 @@ function UI:AcquireClassRow(index)
     row.name:SetPoint("LEFT", row.ring, "RIGHT", 10, 0)
 
     row.pill = CreateFrame("Frame", nil, row, "BackdropTemplate")
-    row.pill:SetSize(CLASS_PILL_WIDTH, 18)
+    row.pill:SetSize(menu.pillWidth or CLASS_PILL_WIDTH, 18)
     row.pill:SetPoint("RIGHT", -12, 0)
     row.pill:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     row.pill:SetBackdropColor(0.09, 0.075, 0.055, 1)
     row.pill:SetBackdropBorderColor(0.24, 0.2, 0.12, 1)
     row.pill.text = NewText(row.pill, "GameFontHighlightSmall")
     row.pill.text:SetPoint("CENTER")
+    if not menu.pillWidth then
+        -- as wide as the longest count in this language, so the column lines up on every row
+        local widest = CLASS_PILL_WIDTH
+        for _, text in ipairs({ L["%d plan"]:format(1), L["%d plans"]:format(88) }) do
+            row.pill.text:SetText(text)
+            widest = math.max(widest, (row.pill.text:GetStringWidth() or 0) + 16)
+        end
+        menu.pillWidth = widest
+        row.pill:SetWidth(widest)
+    end
     row.you = NewText(row, "GameFontDisableSmall")
     row.you:SetPoint("RIGHT", row.pill, "LEFT", -10, 0)
-    row.you:SetText("you")
+    row.you:SetText(L["you"])
 
     row:SetScript("OnEnter", function(self)
         self.hover:Show()
@@ -1261,11 +1295,12 @@ function UI:OpenMenu(page)
     end
 
     if page == "classes" then
-        Row("< Back", "Browse classes", function() UI:OpenMenu() end, { 0.6, 0.6, 0.6 })
+        Row(L["< Back"], L["Browse classes"], function() UI:OpenMenu() end, { 0.6, 0.6, 0.6 })
         Rule()
         for index, entry in ipairs(TP.CLASSES) do
             local own = entry.tree == TP.ownTreeID
             local viewing = (TP.browse == entry.tree) or (own and not browsing)
+            local leaves = self:IsOwnWindowTree(entry)
             local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[entry.token]
             local r, g, b = 1, 1, 1
             if classColor then
@@ -1293,14 +1328,14 @@ function UI:OpenMenu(page)
             local saved = TP.db.plans[entry.tree]
             local count = saved and #saved or 0
             if count > 0 then
-                row.pill.text:SetText(count .. (count == 1 and " plan" or " plans"))
+                row.pill.text:SetText((count == 1 and L["%d plan"] or L["%d plans"]):format(count))
                 row.pill:Show()
             else
                 row.pill:Hide()
             end
 
             row:SetScript("OnClick", function()
-                if own then
+                if leaves then
                     UI:CloseViewer()
                 else
                     UI:OpenViewer(entry)
@@ -1313,15 +1348,15 @@ function UI:OpenMenu(page)
         return
     end
 
-    if browsing then
-        Row("< Back to my talents", nil, function()
+    if browsing and not TP.host then
+        Row(L["< Back to my talents"], nil, function()
             UI:CloseViewer()
         end, { 0.6, 0.6, 0.6 })
     end
     Rule()
     local plans = TP:Plans(treeID)
     if #plans == 0 then
-        Row("No plans yet", nil, function() end, { 0.6, 0.6, 0.6 })
+        Row(L["No plans yet"], nil, function() end, { 0.6, 0.6, 0.6 })
     end
     for _, plan in ipairs(plans) do
         local selected = snap.plan == plan
@@ -1341,7 +1376,7 @@ function UI:OpenMenu(page)
                 if not link.confirm then
                     -- the first click only asks
                     link.confirm = true
-                    link.text:SetText("Sure?")
+                    link.text:SetText(L["Sure?"])
                     C_Timer.After(2, function()
                         if link.confirm then
                             link.confirm = nil
@@ -1356,32 +1391,33 @@ function UI:OpenMenu(page)
             end,
         })
     end
-    Row("+ New plan", nil, function()
+    Row(L["+ New plan"], nil, function()
         UI:OpenSheet("new")
     end, GOLD)
 
     Rule()
-    Row("Import build...", nil, function()
+    Row(L["Import build..."], nil, function()
         UI:OpenSheet("import")
     end)
     if snap.plan then
-        Row("Export build...", nil, function()
+        Row(L["Export build..."], nil, function()
             UI:OpenSheet("export")
         end)
     end
     Rule()
     if not browsing then
-        ToggleRow("Dim other talents", "Guide mode only", TP.db.focus, function()
+        ToggleRow(L["Dim other talents"], L["Guide mode only"], TP.db.focus, function()
             TP.db.focus = not TP.db.focus
             UI:Refresh()
             UI:OpenMenu(page)
         end)
     end
-    ToggleRow("Edit mode animations", "Rings, flashes and sparks", TP.db.animations ~= false, function()
+    ToggleRow(L["Edit mode animations"], L["Rings, flashes and sparks"], TP.db.animations ~= false, function()
         TP.db.animations = not (TP.db.animations ~= false)
         UI:RebuildMenu()
     end)
-    Row("Browse other classes...", nil, function() UI:OpenMenu("classes") end, GOLD)
+    Row(L["Browse other classes..."], nil, function() UI:OpenMenu("classes") end, GOLD)
+    Row(L["Settings profile..."], nil, function() UI:OpenProfile("export") end)
     Finish()
 end
 
@@ -1406,7 +1442,7 @@ function UI:BuildSheet(tf)
     end)
 
     local card = NewPanel(sheet, 0.98)
-    card:SetSize(450, 142)
+    card:SetSize(480, 142)
     card:SetPoint("CENTER")
     card:EnableMouse(true)
     sheet.card = card
@@ -1418,13 +1454,15 @@ function UI:BuildSheet(tf)
     sheet.close:SetPoint("TOPRIGHT", -2, -2)
     sheet.close:SetScript("OnClick", function() UI:CloseSheet() end)
 
-    sheet.tabExport = NewButton(card, "Export", 62, 22, function() UI:OpenSheet("export") end)
+    sheet.tabExport = NewButton(card, L["Export"], 62, 22, function() UI:OpenSheet("export") end)
+    sheet.tabExport:FitText()
     sheet.tabExport:SetPoint("TOPRIGHT", -34, -14)
-    sheet.tabImport = NewButton(card, "Import", 62, 22, function() UI:OpenSheet("import") end)
+    sheet.tabImport = NewButton(card, L["Import"], 62, 22, function() UI:OpenSheet("import") end)
+    sheet.tabImport:FitText()
     sheet.tabImport:SetPoint("RIGHT", sheet.tabExport, "LEFT", -4, 0)
 
     local edit = CreateFrame("EditBox", nil, card, "InputBoxTemplate")
-    edit:SetSize(396, 22)
+    edit:SetSize(426, 22)
     edit:SetPoint("TOPLEFT", 26, -56)
     edit:SetAutoFocus(false)
     edit:SetMaxLetters(4000)
@@ -1444,10 +1482,10 @@ function UI:BuildSheet(tf)
 
     sheet.status = NewText(card, "GameFontHighlightSmall", { 0.6, 0.6, 0.6 })
     sheet.status:SetPoint("BOTTOMLEFT", 20, 20)
-    sheet.status:SetWidth(310)
+    sheet.status:SetWidth(330)
     sheet.status:SetJustifyH("LEFT")
 
-    sheet.action = NewButton(card, "OK", 92, 24, function() UI:SheetAction() end)
+    sheet.action = NewButton(card, L["OK"], 92, 24, function() UI:SheetAction() end)
     sheet.action:SetPoint("BOTTOMRIGHT", -18, 14)
 
     self.sheet = sheet
@@ -1486,36 +1524,36 @@ function UI:OpenSheet(mode)
     sheet.edit:SetText("")
 
     if mode == "export" then
-        sheet.title:SetText("Share build")
+        sheet.title:SetText(L["Share build"])
         local text, err = TP:Export(snap.plan, snap.meta, self:ClassIDFor(snap.treeID))
         if text then
             sheet.exportText = text
             sheet.edit:SetText(text)
             sheet.edit:SetFocus()
             sheet.edit:HighlightText()
-            self:SetStatus("Press Ctrl+C to copy. " .. #snap.plan.order .. " points.", PLAN)
+            self:SetStatus(L["Press Ctrl+C to copy. %d points."]:format(#snap.plan.order), PLAN)
         else
             self:SetStatus(TP:ErrorText(err), RED)
         end
     elseif mode == "import" then
-        sheet.title:SetText("Share build")
-        sheet.action:SetText("Import")
+        sheet.title:SetText(L["Share build"])
+        sheet.action:SetText(L["Import"])
         sheet.edit:SetFocus()
-        self:SetStatus("Paste a build string.")
+        self:SetStatus(L["Paste a build string."])
     elseif mode == "new" then
-        sheet.title:SetText("New plan")
-        sheet.action:SetText("Create")
-        sheet.edit:SetText(TP:UniqueName(snap.treeID, "Plan"))
+        sheet.title:SetText(L["New plan"])
+        sheet.action:SetText(L["Create"])
+        sheet.edit:SetText(TP:UniqueName(snap.treeID, L["Plan"]))
         sheet.edit:SetFocus()
         sheet.edit:HighlightText()
-        self:SetStatus("Name your plan.")
+        self:SetStatus(L["Name your plan."])
     elseif mode == "rename" then
-        sheet.title:SetText("Rename plan")
-        sheet.action:SetText("Rename")
+        sheet.title:SetText(L["Rename plan"])
+        sheet.action:SetText(L["Rename"])
         sheet.edit:SetText(snap.plan and snap.plan.name or "")
         sheet.edit:SetFocus()
         sheet.edit:HighlightText()
-        self:SetStatus("Name your plan.")
+        self:SetStatus(L["Name your plan."])
     end
 end
 
@@ -1545,7 +1583,7 @@ function UI:ValidateImport(text)
     sheet.parsed = nil
     sheet.pendingClass = nil
     if not snap or TP.Trim(text) == "" then
-        self:SetStatus("Paste a build string.")
+        self:SetStatus(L["Paste a build string."])
         return
     end
     local order, err, extra = TP:Decode(text, snap.meta, self:ClassIDFor(snap.treeID))
@@ -1554,7 +1592,7 @@ function UI:ValidateImport(text)
         if other then
             -- A build for another class: the Import button opens that class's tree, then the string checks out.
             sheet.pendingClass = other
-            self:SetStatus("This build is for " .. TP:ClassName(other) .. ". Import opens their tree.", GOLD)
+            self:SetStatus(L["This build is for %s. Import opens their tree."]:format(TP:ClassName(other)), GOLD)
         else
             self:SetStatus(TP:ErrorText(err, extra), RED)
         end
@@ -1562,7 +1600,7 @@ function UI:ValidateImport(text)
     end
     sheet.parsed = order
     local split = TP:Split(snap.meta, order)
-    self:SetStatus("Valid build. " .. table.concat(split, " / ") .. ", " .. #order .. " points.", PLAN)
+    self:SetStatus(L["Valid build. %s, %d points."]:format(table.concat(split, " / "), #order), PLAN)
 end
 
 function UI:SheetAction()
@@ -1575,7 +1613,7 @@ function UI:SheetAction()
     if sheet.mode == "import" then
         if sheet.pendingClass then
             local entry, text = sheet.pendingClass, sheet.edit:GetText()
-            if entry.tree == TP.ownTreeID then
+            if self:IsOwnWindowTree(entry) then
                 self:CloseViewer()
             else
                 self:OpenViewer(entry)
@@ -1585,24 +1623,24 @@ function UI:SheetAction()
             return
         end
         if not sheet.parsed then
-            self:SetStatus("Paste a valid build string first.", RED)
+            self:SetStatus(L["Paste a valid build string first."], RED)
             return
         end
-        local plan = TP:NewPlan(snap.treeID, "Imported", sheet.parsed)
+        local plan = TP:NewPlan(snap.treeID, L["Imported"], sheet.parsed)
         if not TP.browse and TP.db.mode == "off" then
             TP.db.mode = "guide"
         end
-        TP:Print("Imported \"" .. plan.name .. "\" (" .. #plan.order .. " points).")
+        TP:Print(L["Imported \"%s\" (%d points)."]:format(plan.name, #plan.order))
     elseif sheet.mode == "new" then
         local plan = TP:NewPlan(snap.treeID, sheet.edit:GetText())
         if not TP.browse and TP.db.mode == "off" then
             TP.db.mode = "edit"
         end
-        TP:Print("Created \"" .. plan.name .. "\".")
+        TP:Print(L["Created \"%s\"."]:format(plan.name))
     elseif sheet.mode == "rename" and snap.plan then
         local ok, message = TP:RenamePlan(snap.treeID, snap.plan, sheet.edit:GetText())
         if not ok then
-            self:SetStatus(message or "Enter a name.", RED)
+            self:SetStatus(message or L["Enter a name."], RED)
             return
         end
     else
@@ -1626,7 +1664,7 @@ function UI:NodeClicked(nodeID, mouseButton, overlay)
         return
     end
     if not snap.plan then
-        TP:NewPlan(snap.treeID, "Plan")
+        TP:NewPlan(snap.treeID, L["Plan"])
         snap = TP:Snapshot()
         if not snap then
             return
@@ -1781,18 +1819,18 @@ function UI:RefreshChip(snap, mode)
     local plan = snap.plan
     local text
     if not plan then
-        text = "Talents Forge: no plan yet"
+        text = L["Talents Forge: no plan yet"]
     elseif mode == "edit" then
         local browsed = TP.browse and TP:ClassByTree(TP.browse)
-        local prefix = browsed and (TP:ClassName(browsed) .. ":  ") or "Editing  "
+        local prefix = browsed and (TP:ClassName(browsed) .. ":  ") or (L["Editing"] .. "  ")
         text = prefix .. Truncate(plan.name, 18) .. "  " .. #plan.order .. "/" .. TP.POINT_CAP
     elseif mode == "guide" then
         if snap.nextNode then
-            text = "Next: " .. TP:NodeName(snap.meta, snap.nextNode) .. "  (level " .. TP:LevelOf(snap.nextIndex) .. ")"
+            text = L["Next: %s  (level %d)"]:format(TP:NodeName(snap.meta, snap.nextNode), TP:LevelOf(snap.nextIndex))
         elseif #plan.order == 0 then
-            text = Truncate(plan.name, 18) .. " is empty"
+            text = L["%s is empty"]:format(Truncate(plan.name, 18))
         else
-            text = Truncate(plan.name, 18) .. " complete"
+            text = L["%s complete"]:format(Truncate(plan.name, 18))
         end
     else
         text = Truncate(plan.name, 24)
@@ -1827,7 +1865,7 @@ function UI:RefreshBar(snap, mode)
     bar.slider:SetMinMaxValues(TP.FIRST_LEVEL, lastLevel)
     bar.slider:SetValue(view and TP:LevelOf(view) or lastLevel)
     self.settingSlider = nil
-    bar.levelValue:SetText(#order == 0 and "-" or ("Lv " .. TP:LevelOf(count)))
+    bar.levelValue:SetText(#order == 0 and "-" or L["Lv %d"]:format(TP:LevelOf(count)))
 end
 
 -- frame: the game's talent window, or the class browser. snap is nil to clear the frame's overlays.
@@ -2035,16 +2073,17 @@ function UI:BuildViewer(tf)
     viewer.title:SetPoint("TOPLEFT", 22, -16)
     viewer.note = NewText(viewer, "GameFontDisableSmall")
     viewer.note:SetPoint("TOPLEFT", viewer.title, "BOTTOMLEFT", 0, -3)
-    viewer.note:SetText("Planning only. Your own talents aren't touched.")
+    viewer.note:SetText(L["Planning only. Your own talents aren't touched."])
 
-    viewer.back = NewButton(viewer, "Back to my talents", 140, 24, function()
+    viewer.back = NewButton(viewer, L["Back to my talents"], 140, 24, function()
         UI:CloseViewer()
     end)
+    viewer.back:FitText()
     viewer.back:SetPoint("TOPRIGHT", -22, -14)
 
     viewer.empty = NewText(viewer, "GameFontNormal", RED)
     viewer.empty:SetPoint("CENTER")
-    viewer.empty:SetText("The game didn't describe this class's talents.")
+    viewer.empty:SetText(L["The game didn't describe this class's talents."])
     viewer.empty:Hide()
 
     -- Connections live above the panels' backgrounds and below the talents.
@@ -2065,6 +2104,26 @@ function UI:BuildViewer(tf)
 
     viewer:SetScript("OnSizeChanged", function()
         UI:LayoutViewer()
+    end)
+
+    -- In our own window (below the level talents unlock) the browser is all there is, and it can be dragged by its background.
+    viewer:RegisterForDrag("LeftButton")
+    viewer:SetScript("OnDragStart", function()
+        if TP.host then
+            TP.host:StartMoving()
+        end
+    end)
+    viewer:SetScript("OnDragStop", function()
+        local host = TP.host
+        if host then
+            host:StopMovingOrSizing()
+            local hx, hy = host:GetCenter()
+            local ux, uy = UIParent:GetCenter()
+            if hx and ux then
+                TP.db.pos.host = { math.floor(hx - ux + 0.5), math.floor(hy - uy + 0.5) }
+            end
+            host:Place()
+        end
     end)
     self.viewer = viewer
 end
@@ -2198,7 +2257,7 @@ function UI:AcquireNodeButton(index)
             GameTooltip:SetText(TP:NodeName(snap and snap.meta, self.nodeID), 1, 0.82, 0)
         end
         if node and node.max > 1 then
-            GameTooltip:AddLine("Max rank " .. node.max, 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(L["Max rank %d"]:format(node.max), 0.6, 0.6, 0.6)
         end
         GameTooltip:Show()
     end)
@@ -2325,7 +2384,7 @@ function UI:LayoutViewer(snap)
         panel:SetPoint("TOPLEFT", viewer, "TOPLEFT", PANEL_MARGIN + (index - 1) * (panelWidth + PANEL_GAP), -PANEL_TOP)
         panel:SetSize(panelWidth, panelHeight)
         panel:Show()
-        panel.title:SetText(entry and entry.specs[index] or "")
+        panel.title:SetText(entry and TP:SpecName(entry, index) or "")
         if entry and entry.icons[index] then
             panel.icon:SetTexture("Interface\\Icons\\" .. entry.icons[index])
         end
@@ -2553,7 +2612,7 @@ function UI:OpenViewer(entry)
     if not self.viewer or not entry then
         return
     end
-    if entry.tree == TP.ownTreeID then
+    if self:IsOwnWindowTree(entry) then
         self:CloseViewer()
         return
     end
@@ -2565,10 +2624,16 @@ function UI:OpenViewer(entry)
 
     local snap = TP:Snapshot()
     if snap and not snap.plan then
-        TP:NewPlan(snap.treeID, "Plan")
+        TP:NewPlan(snap.treeID, L["Plan"])
     end
     self:Refresh()
     self:RebuildMenu()
+end
+
+-- Your own class's tree is the game's talent window itself, so choosing it means leaving the browser. In our own window
+-- (talents not unlocked yet) there is no such window, and your own class is browsed like any other.
+function UI:IsOwnWindowTree(entry)
+    return entry.tree == TP.ownTreeID and not TP.host
 end
 
 function UI:CloseViewer()
@@ -2581,6 +2646,13 @@ function UI:CloseViewer()
     TP.view = nil
     viewer:Hide()
     self:CloseSheet()
+    if TP.host then
+        self:CloseMenu()
+        if TP.host:IsShown() then
+            TP.host:Hide() -- the browser is the whole window; its OnHide comes back here with nothing left to do
+        end
+        return
+    end
     if wasBrowsing then
         self:Refresh()
         self:RebuildMenu()
@@ -2591,6 +2663,163 @@ function UI:ResetPositions()
     if self.chip then
         self.chip:Place()
         self.bar:Place()
+    end
+    if TP.host then
+        TP.host:Place()
+    end
+end
+
+-- A profile was imported: put everything where it says and redraw.
+function UI:ProfileApplied()
+    self:ResetPositions()
+    self:Refresh()
+    self:RebuildMenu()
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Settings profile: one string for every setting, position and plan. A window of its own, so /tforge profile works
+-- wherever you are, with or without the talent window open.
+------------------------------------------------------------------------------------------------------------------------
+
+function UI:BuildProfile()
+    local card = NewPanel(UIParent, 0.98)
+    _G.TalentsForgeProfile = card
+    card:SetSize(500, 150)
+    card:SetPoint("CENTER", 0, 120)
+    card:SetFrameStrata("FULLSCREEN_DIALOG")
+    card:SetClampedToScreen(true)
+    card:SetMovable(true)
+    card:EnableMouse(true)
+    card:RegisterForDrag("LeftButton")
+    card:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    card:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    card:Hide()
+
+    card.title = NewText(card, "GameFontNormalLarge")
+    card.title:SetPoint("TOPLEFT", 20, -18)
+    card.title:SetText(L["Settings profile"])
+
+    card.close = CreateFrame("Button", nil, card, "UIPanelCloseButton")
+    card.close:SetPoint("TOPRIGHT", -2, -2)
+    card.close:SetScript("OnClick", function() card:Hide() end)
+
+    card.tabExport = NewButton(card, L["Export"], 62, 22, function() UI:OpenProfile("export") end)
+    card.tabExport:FitText()
+    card.tabExport:SetPoint("TOPRIGHT", -34, -14)
+    card.tabImport = NewButton(card, L["Import"], 62, 22, function() UI:OpenProfile("import") end)
+    card.tabImport:FitText()
+    card.tabImport:SetPoint("RIGHT", card.tabExport, "LEFT", -4, 0)
+
+    local edit = CreateFrame("EditBox", nil, card, "InputBoxTemplate")
+    edit:SetSize(446, 22)
+    edit:SetPoint("TOPLEFT", 26, -56)
+    edit:SetAutoFocus(false)
+    edit:SetMaxLetters(0) -- a profile with many plans is long
+    edit:SetScript("OnEscapePressed", function() card:Hide() end)
+    edit:SetScript("OnEnterPressed", function() UI:ProfileAction() end)
+    edit:SetScript("OnTextChanged", function(self, userInput)
+        if card.mode == "export" then
+            if userInput then
+                self:SetText(card.exportText or "")
+                self:HighlightText()
+            end
+        else
+            UI:ValidateProfile(self:GetText())
+        end
+    end)
+    card.edit = edit
+
+    card.status = NewText(card, "GameFontHighlightSmall", { 0.6, 0.6, 0.6 })
+    card.status:SetPoint("BOTTOMLEFT", 20, 20)
+    card.status:SetWidth(360)
+    card.status:SetJustifyH("LEFT")
+
+    card.action = NewButton(card, L["Import"], 92, 24, function() UI:ProfileAction() end)
+    card.action:SetPoint("BOTTOMRIGHT", -18, 14)
+
+    table.insert(UISpecialFrames, "TalentsForgeProfile")
+    self.profile = card
+    return card
+end
+
+-- "1 plan", "3 plans"
+function UI:PlanCount(count)
+    return (count == 1 and L["%d plan"] or L["%d plans"]):format(count)
+end
+
+function UI:SetProfileStatus(text, color)
+    local status = self.profile.status
+    status:SetText(text or "")
+    color = color or { 0.6, 0.6, 0.6 }
+    status:SetTextColor(color[1], color[2], color[3])
+end
+
+function UI:OpenProfile(mode)
+    local card = self.profile or self:BuildProfile()
+    card.mode = mode == "import" and "import" or "export"
+    card.exportText = nil
+    card.valid = nil
+    card:Show()
+    card.tabExport:SetActive(card.mode == "export")
+    card.tabImport:SetActive(card.mode == "import")
+    card.action:SetShown(card.mode == "import")
+    card.edit:SetText("")
+    if card.mode == "export" then
+        local text, plans = TP:ExportProfile()
+        if text then
+            card.exportText = text
+            card.edit:SetText(text)
+            card.edit:SetFocus()
+            card.edit:HighlightText()
+            self:SetProfileStatus(L["Press Ctrl+C to copy. Includes settings, positions and %s."]:format(self:PlanCount(plans)), PLAN)
+        else
+            self:SetProfileStatus(TP:ErrorText(plans), RED)
+        end
+    else
+        card.edit:SetFocus()
+        self:SetProfileStatus(L["Paste a profile string. It replaces your settings and adds its plans."])
+    end
+end
+
+function UI:ValidateProfile(text)
+    local card = self.profile
+    card.valid = nil
+    if TP.Trim(text) == "" then
+        self:SetProfileStatus(L["Paste a profile string. It replaces your settings and adds its plans."])
+        return
+    end
+    local profile, err = TP:DecodeProfile(text)
+    if not profile then
+        self:SetProfileStatus(TP:ErrorText(err), RED)
+        return
+    end
+    card.valid = true
+    local plans = 0
+    for _, list in pairs(profile.plans) do
+        plans = plans + #list
+    end
+    self:SetProfileStatus(L["Valid profile with %s."]:format(self:PlanCount(plans)), PLAN)
+end
+
+function UI:ProfileAction()
+    local card = self.profile
+    if not card or not card:IsShown() or card.mode ~= "import" then
+        return
+    end
+    if not card.valid then
+        self:SetProfileStatus(L["Paste a valid profile string first."], RED)
+        return
+    end
+    local result, err = TP:ImportProfile(card.edit:GetText())
+    if not result then
+        self:SetProfileStatus(TP:ErrorText(err), RED)
+        return
+    end
+    card:Hide()
+    if result.skipped > 0 then
+        TP:Print(L["Profile imported: settings and positions restored, %s added, %d already there."]:format(self:PlanCount(result.added), result.skipped))
+    else
+        TP:Print(L["Profile imported: settings and positions restored, %s added."]:format(self:PlanCount(result.added)))
     end
 end
 
@@ -2616,6 +2845,14 @@ function UI:Build(tf)
     tf:HookScript("OnShow", function()
         TP:ForgetMeta()
         TP.view = nil
+        if TP.host and not TP.browse then
+            local entry = TP.host.wanted or TP:OwnClass()
+            TP.host.wanted = nil
+            if entry then
+                UI:OpenViewer(entry)
+                return
+            end
+        end
         UI:Refresh()
     end)
     tf:HookScript("OnHide", function()
@@ -2640,6 +2877,17 @@ function UI:TryAttach()
     if not TP.db then
         return false
     end
+    if TP.host then
+        -- Built on our own window earlier this session; the game's window only gets us after a reload.
+        if TP:TalentsUnlocked() and _G.PlayerSpellsFrame and not self.reloadNoted then
+            self.reloadNoted = true
+            TP:Print(L["Your talents are unlocked now. Type /reload to use Talents Forge inside the talent window."])
+        end
+        return false
+    end
+    if not TP:TalentsUnlocked() then
+        return false -- the window has nothing to draw on yet; /tforge browse opens one of our own
+    end
     local tf = TP:GetTalentFrame()
     if not tf then
         return false
@@ -2649,6 +2897,133 @@ function UI:TryAttach()
         self:Refresh()
     end
     return true
+end
+
+-- Our own window for the class browser, used while the game's talent window is locked. It answers the few calls the rest
+-- of the addon makes of a talent window.
+function UI:BuildHost()
+    local host = NewPanel(UIParent, 0.97)
+    _G.TalentsForgeBrowser = host
+    host:SetFrameStrata("HIGH")
+    host:SetClampedToScreen(true)
+    host:SetMovable(true)
+    host:EnableMouse(true)
+    function host:Place()
+        local saved = TP.db.pos.host
+        self:ClearAllPoints()
+        self:SetPoint("CENTER", UIParent, "CENTER", saved and saved[1] or 0, saved and saved[2] or 20)
+    end
+    host:Place()
+    host:Hide()
+
+    local width = math.min(1000, (UIParent:GetWidth() or 1200) - 80)
+    local height = math.min(640, (UIParent:GetHeight() or 800) - 80)
+    local game = _G.PlayerSpellsFrame and _G.PlayerSpellsFrame.TalentsFrame
+    if game and game.GetWidth and (game:GetWidth() or 0) > 400 and (game:GetHeight() or 0) > 300 then
+        width, height = game:GetWidth(), game:GetHeight()
+    end
+    host:SetSize(width, height)
+
+    function host:GetTalentTreeID()
+        local own = TP:OwnClass()
+        return own and own.tree
+    end
+    function host:IsInspecting()
+        return false
+    end
+    function host:EnumerateAllTalentButtons()
+        return function() end -- there are no game buttons to put rings on
+    end
+
+    table.insert(UISpecialFrames, "TalentsForgeBrowser")
+    TP.host = host
+    self:Build(host)
+    self.viewer.back:SetText(L["Close"])
+    self.viewer.back:SetWidth(90)
+    return true
+end
+
+-- Matches "mage", "Warlock" or "pal" against the class names.
+local function FindClass(text)
+    text = text and text:lower() or ""
+    if text == "" then
+        return nil
+    end
+    -- the English token, then the name in your language, then the start of either
+    for _, entry in ipairs(TP.CLASSES) do
+        if entry.token:lower() == text then
+            return entry
+        end
+    end
+    for _, entry in ipairs(TP.CLASSES) do
+        if TP:ClassName(entry):lower() == text then
+            return entry
+        end
+    end
+    for _, entry in ipairs(TP.CLASSES) do
+        if entry.token:lower():find(text, 1, true) == 1 or TP:ClassName(entry):lower():find(text, 1, true) == 1 then
+            return entry
+        end
+    end
+end
+
+-- /tforge browse [class]
+function UI:OpenBrowser(argument)
+    local entry
+    if argument and argument ~= "" then
+        entry = FindClass(argument)
+        if not entry then
+            TP:Print(L["There's no class called \"%s\". Try /tforge browse mage."]:format(argument))
+            return
+        end
+    end
+
+    -- Talents unlocked: the browser lives in the game's talent window, like the menu's "Browse other classes".
+    if TP:TalentsUnlocked() and not TP.host then
+        local tf = TP:GetTalentFrame()
+        if not (tf and tf:IsShown()) then
+            local game = _G.PlayerSpellsFrame
+            if game and game:IsShown() then
+                TP:Print(L["Switch to the Talents tab, then type /tforge browse again."])
+                return
+            end
+            if type(_G.TogglePlayerSpellsFrame) == "function" then
+                TogglePlayerSpellsFrame()
+            end
+            self:TryAttach()
+        end
+        if not (self.tf and self.tf:IsShown()) then
+            TP:Print(L["Open your talent window (default key N) on the Talents tab, then type /tforge browse again."])
+            return
+        end
+        if entry then
+            self:OpenViewer(entry)
+        else
+            self:OpenMenu("classes")
+        end
+        return
+    end
+
+    -- Locked: a window of our own.
+    entry = entry or TP:OwnClass()
+    if not entry then
+        TP:Print(L["Couldn't tell which class you are. Try /tforge browse mage."])
+        return
+    end
+    if not TP.host then
+        self:BuildHost()
+    end
+    local host = TP.host
+    self.viewer.empty:SetText(L["The game has no talent data for this character yet."])
+    if host:IsShown() then
+        self:OpenViewer(entry)
+    else
+        host.wanted = entry
+        host:Show() -- OnShow opens the browser on that class
+    end
+    if not self.snap then
+        TP:Print(L["The game gave no talent data for this character, so there is nothing to show yet."])
+    end
 end
 
 function UI:Install()

@@ -65,8 +65,19 @@ the level you take the talent at.
 
 | Command | What it does |
 |---|---|
+| `/tforge browse [class]` | Open the class browser, even on a character whose talents haven't unlocked yet (it gets a small window of its own). `/tforge browse mage` jumps straight to a class. |
 | `/tforge mode off\|guide\|edit` | Switch mode. |
-| `/tforge reset` | Put the chip and the bar back in their default spots (Shift-drag moves them). |
+| `/tforge profile [import]` | Copy or paste your whole setup as one string: mode, toggles, where the chip, bar and browser window sit, and every plan. Also in the menu as "Settings profile...". Importing replaces your settings and adds its plans; nothing of yours is deleted. Separate from build strings. |
+| `/tforge reset` | Put the chip, the bar and the browser window back in their default spots (Shift-drag moves them). |
+
+## Languages
+
+The addon's own text is translated for deDE, frFR, esES, esMX, ptBR, ruRU, koKR, zhCN, zhTW and itIT; English clients
+(and any key without a translation) show English. Class, talent and spell names come from the game, so they are always in
+your game language. Build and profile strings are language-neutral: a build exported on a German client imports on an
+English one. The texts are in `Locales/`, one file per language. `/tforge browse <class>` ignores capital letters only
+for the English letters, so in Russian type the class name exactly as the game writes it, or use the English name
+(`/tforge browse mage`).
 
 ## Build strings
 
